@@ -15,6 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       DATABASE_URL: postgresql://admin:adminpassword@localhost:5432/placement_portal
+      DIRECT_URL: postgresql://admin:adminpassword@localhost:5432/placement_portal
 
     services:
       # Optional: Spin up a PostgreSQL database service if your backend needs a live DB for the test
