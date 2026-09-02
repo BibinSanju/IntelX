@@ -38,7 +38,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: 'npm'
 
       - name: 🐍 Setup Python (For Scrapers/Embeddings)
         uses: actions/setup-python@v5
@@ -92,4 +91,5 @@ jobs:
           password: ${{ secrets.EMAIL_PASSWORD }}
           subject: "❌ URGENT: Placement Portal Feeder Pipeline Broke!"
           to: bibin@intelx.com
+          from: "IntelX CI <${{ secrets.EMAIL_USERNAME }}>"
           body: "The Playwright E2E test failed. Please check the GitHub Actions logs to see if the LLM or Sandbox is broken!"
