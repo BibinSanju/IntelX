@@ -13,6 +13,8 @@ jobs:
   run-feeder-e2e:
     name: 🧪 Run Feeder E2E (Scraper -> LLM -> Sandbox)
     runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: postgresql://admin:adminpassword@localhost:5432/placement_portal
 
     services:
       # Optional: Spin up a PostgreSQL database service if your backend needs a live DB for the test
@@ -77,8 +79,6 @@ jobs:
 
       - name: 🧪 Execute Feeder E2E Pipeline
         run: npx -y playwright test e2e/feeder-flow.spec.ts
-        env:
-          DATABASE_URL: postgresql://admin:adminpassword@localhost:5432/placement_portal
 
       - name: 📊 Upload Test Results
         if: always()
