@@ -36,6 +36,34 @@ app.get('/', (c) => {
   return c.json({ status: 'live', message: 'Backend Engine is running 🚀' })
 })
 
+// Phase 1: Ingestion API (For Scraper & Student Feeder)
+app.post('/api/ingest', async (c) => {
+  try {
+    const { raw_text, source } = await c.req.json()
+
+    if (!raw_text) {
+      return c.json({ success: false, error: 'raw_text is required' }, 400)
+    }
+
+    const stagedQuestion = await prisma.stagedQuestion.create({
+      data: {
+        rawText: raw_text,
+        source: source || 'Student',
+        status: 'PENDING_AI',
+      }
+    })
+
+    return c.json({ 
+      success: true, 
+      message: 'Question ingested successfully',
+      questionId: stagedQuestion.id 
+    })
+  } catch (error) {
+    console.error('Ingestion error:', error)
+    return c.json({ success: false, error: 'Failed to ingest question' }, 500)
+  }
+})
+
 const JWT_SECRET = process.env.JWT_SECRET || 'hackathon_super_secret'
 
 // Phase 2: Native Signup API

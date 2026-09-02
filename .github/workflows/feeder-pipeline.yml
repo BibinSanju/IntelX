@@ -1,0 +1,95 @@
+name: ⚙️ Feeder Pipeline Integration Tests
+
+on:
+  push:
+    branches: [ main, "feature/feeder-**" ]
+  pull_request:
+    branches: [ main ]
+  schedule:
+    # Run nightly at 2:00 AM IST to catch external API breakages
+    - cron: '30 20 * * *'
+
+jobs:
+  run-feeder-e2e:
+    name: 🧪 Run Feeder E2E (Scraper -> LLM -> Sandbox)
+    runs-on: ubuntu-latest
+
+    services:
+      # Optional: Spin up a PostgreSQL database service if your backend needs a live DB for the test
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: admin
+          POSTGRES_PASSWORD: adminpassword
+          POSTGRES_DB: placement_portal
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: 📥 Check out repository
+        uses: actions/checkout@v4
+
+      - name: 🟢 Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: 🐍 Setup Python (For Scrapers/Embeddings)
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: 📦 Install NPM Dependencies
+        run: npm ci
+
+      - name: 🏗️ Build Backend and Frontend
+        run: npm run build
+        
+      - name: 🐳 Start Docker Daemon (For Sandbox execution)
+        run: docker info # Verify docker is running
+
+      - name: 🚀 Start Backend Server in Background
+        run: |
+          cd server || cd backend
+          npx prisma db push
+          npm run start &
+          echo "Waiting for backend to boot..."
+          sleep 5
+
+      - name: 🎭 Install Playwright Browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: 🧪 Execute Feeder E2E Pipeline
+        # Specifically run the feeder test, targeting the local backend/frontend
+        run: npx playwright test e2e/feeder-flow.spec.ts
+        env:
+          # Inject environment variables needed for LLMs and DBs
+          DATABASE_URL: postgresql://admin:adminpassword@localhost:5432/placement_portal
+          # SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          # GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+
+      - name: 📊 Upload Test Results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: feeder-playwright-report
+          path: playwright-report/
+          retention-days: 7
+
+      - name: 🚨 Send Email Alert on Failure
+        if: failure()
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 465
+          username: ${{ secrets.EMAIL_USERNAME }}
+          password: ${{ secrets.EMAIL_PASSWORD }}
+          subject: "❌ URGENT: Placement Portal Feeder Pipeline Broke!"
+          to: bibin@intelx.com
+          body: "The Playwright E2E test failed. Please check the GitHub Actions logs to see if the LLM or Sandbox is broken!"
