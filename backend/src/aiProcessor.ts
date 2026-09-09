@@ -12,13 +12,16 @@ const adapter = new PrismaPg(pool);
 const prisma = new PrismaClient({ adapter });
 
 const EXECUTOR_URL = process.env.EXECUTOR_URL || 'http://localhost:8080';
-const PRIMARY_MODEL = process.env.GROQ_MODEL || 'llama-3.1-8b-instant';
+const PRIMARY_MODEL = process.env.GROQ_MODEL || 'openai/gpt-oss-120b';
 
 async function createChatCompletion(groq: Groq, options: { messages: any[]; temperature?: number }) {
   const candidateModels = [
     PRIMARY_MODEL,
+    'openai/gpt-oss-120b',
+    'openai/gpt-oss-20b',
+    'qwen/qwen3.8-27b',
+    'qwen/qwen3.6-27b',
     'llama-3.1-8b-instant',
-    'llama3-8b-8192',
     'llama-3.3-70b-versatile',
   ];
   const models = [...new Set(candidateModels.filter(Boolean))] as string[];
