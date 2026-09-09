@@ -1,0 +1,51 @@
+name: 🌙 Nightly Problem Feeder Scraper
+
+on:
+  schedule:
+    # Run every night at 18:30 UTC (12:00 AM / Midnight IST)
+    - cron: '30 18 * * *'
+  workflow_dispatch:
+    inputs:
+      question_limit:
+        description: 'Number of questions to scrape and stage'
+        required: true
+        default: '10'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  scrape-and-stage:
+    name: 📥 Scrape & Stage Questions
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: 📥 Check out repository
+        uses: actions/checkout@v4
+
+      - name: 🐍 Setup Python 3
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+          cache-dependency-path: scraper/requirements.txt
+
+      - name: 📦 Install Python Dependencies
+        run: |
+          cd scraper
+          pip install -r requirements.txt
+
+      - name: 🚀 Run Nightly Feeder Scraper
+        run: |
+          cd scraper
+          LIMIT="${{ inputs.question_limit || '10' }}"
+          python nightly_feeder.py "$LIMIT"
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DIRECT_URL: ${{ secrets.DIRECT_URL }}
+          FEEDER_API_URL: ${{ secrets.FEEDER_API_URL || 'http://localhost:3000' }}
+
+      - name: 📊 Log Completion
+        run: echo "✅ Nightly Scraper completed and fed new questions into Staging Queue!"
