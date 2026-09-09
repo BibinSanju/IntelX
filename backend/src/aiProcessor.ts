@@ -24,11 +24,9 @@ export async function processQuestionInBackground(stagedQuestionId: string) {
       return;
     }
 
-    const isMockMode = process.env.MOCK_AI === 'true' || process.env.NODE_ENV === 'test' && !process.env.GROQ_API_KEY;
     const groq_api_key = process.env.GROQ_API_KEY;
-
-    if (!isMockMode && !groq_api_key) {
-      console.error('Groq API key is missing and MOCK_AI is not set. Cannot process question.');
+    if (!groq_api_key) {
+      console.error('[Pipeline] GROQ_API_KEY is missing. Cannot process question.');
       await prisma.stagedQuestion.update({
         where: { id: stagedQuestionId },
         data: { status: 'FAILED_AI' }
@@ -36,72 +34,14 @@ export async function processQuestionInBackground(stagedQuestionId: string) {
       return;
     }
 
-    const groq = groq_api_key ? new Groq({ apiKey: groq_api_key }) : null;
+    const groq = new Groq({ apiKey: groq_api_key });
 
-    let parsedMeta: any = {};
-    let solutionCode = "";
-    let testCases: Array<{ input: string; expectedOutput: string }> = [];
+    // =========================================================================
+    // STEP 1: LLM Formalization & Algorithmic Strategy Extraction
+    // =========================================================================
+    console.log(`[Pipeline] Step 1: Formalizing raw question ${stagedQuestionId} via Groq...`);
 
-    if (isMockMode) {
-      console.log(`[Pipeline] Running in CI/Mock Mode for question ${stagedQuestionId}...`);
-      parsedMeta = {
-        title: "Shortest Path in Binary Grid",
-        description: "<p>Given an <code>N x N</code> binary grid, return the length of the shortest clear path from top-left to bottom-right avoiding obstacles (1s). If no clear path exists, return -1.</p>",
-        category: "DSA",
-        subtopic: "Graphs",
-        constraints: "<code>1 &lt;= N &lt;= 50</code>",
-        strategy: "Breadth-First Search (BFS) with O(N^2) time and space complexity"
-      };
-      solutionCode = `import sys
-from collections import deque
-
-def solve():
-    lines = [line.strip() for line in sys.stdin if line.strip()]
-    if not lines:
-        return
-    n = int(lines[0])
-    grid = []
-    for i in range(1, n + 1):
-        grid.append(list(map(int, lines[i].split())))
-    if grid[0][0] == 1 or grid[n-1][n-1] == 1:
-        print("-1")
-        return
-    q = deque([(0, 0, 1)])
-    visited = {(0, 0)}
-    while q:
-        r, c, d = q.popleft()
-        if r == n - 1 and c == n - 1:
-            print(d)
-            return
-        for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
-            nr, nc = r + dr, c + dc
-            if 0 <= nr < n and 0 <= nc < n and grid[nr][nc] == 0 and (nr, nc) not in visited:
-                visited.add((nr, nc))
-                q.append((nr, nc, d + 1))
-    print("-1")
-
-if __name__ == '__main__':
-    solve()
-`;
-      testCases = [
-        { input: "2\n0 0\n0 0\n", expectedOutput: "3\n" },
-        { input: "2\n1 0\n0 0\n", expectedOutput: "-1\n" },
-        { input: "3\n0 0 0\n1 1 0\n1 1 0\n", expectedOutput: "5\n" },
-        { input: "1\n0\n", expectedOutput: "1\n" },
-        { input: "1\n1\n", expectedOutput: "-1\n" },
-        { input: "3\n0 1 0\n0 1 0\n0 0 0\n", expectedOutput: "5\n" },
-        { input: "3\n0 0 0\n0 0 0\n0 0 0\n", expectedOutput: "5\n" },
-        { input: "4\n0 0 0 0\n1 1 1 0\n0 0 0 0\n0 1 1 1\n", expectedOutput: "-1\n" },
-        { input: "2\n0 1\n1 0\n", expectedOutput: "-1\n" },
-        { input: "3\n0 1 1\n0 0 1\n1 0 0\n", expectedOutput: "5\n" }
-      ];
-    } else if (groq) {
-      // =========================================================================
-      // STEP 1: LLM Formalization & Algorithmic Strategy Extraction
-      // =========================================================================
-      console.log(`[Pipeline] Step 1: Formalizing raw question ${stagedQuestionId}...`);
-
-      const formalizePrompt = `You are a premier competitive programming problem curator.
+    const formalizePrompt = `You are a premier competitive programming problem curator.
 Analyze the following raw interview question and extract its formal components.
 Raw Text: "${stagedQuestion.rawText.replace(/"/g, '\\"')}"
 
@@ -115,14 +55,13 @@ Output a valid JSON object matching this structure EXACTLY (no markdown, no back
   "strategy": "Optimal algorithm pattern (e.g., BFS / Dynamic Programming) and Big-O Time & Space complexity"
 }`;
 
-      const formalizeCompletion = await groq.chat.completions.create({
-        messages: [{ role: "user", content: formalizePrompt }],
-        model: "llama-3.3-70b-versatile",
-        temperature: 0.1,
-      });
+    const formalizeCompletion = await groq.chat.completions.create({
+      messages: [{ role: "user", content: formalizePrompt }],
+      model: "llama-3.3-70b-versatile",
+      temperature: 0.1,
+    });
 
-      parsedMeta = parseJsonResponse(formalizeCompletion.choices[0].message.content || "{}");
-    }
+    const parsedMeta = parseJsonResponse(formalizeCompletion.choices[0].message.content || "{}");
 
     // =========================================================================
     // STEP 2: 384-d Vector Embedding & Cosine Similarity Deduplication
@@ -162,10 +101,9 @@ Output a valid JSON object matching this structure EXACTLY (no markdown, no back
     // =========================================================================
     // STEP 3: Solution Synthesizer & 10 Standardized I/O Test Cases
     // =========================================================================
-    if (!isMockMode) {
-      console.log(`[Pipeline] Step 3: Synthesizing canonical solution & 10 test cases via Groq...`);
+    console.log(`[Pipeline] Step 3: Synthesizing canonical solution & 10 test cases via Groq...`);
 
-      const synthesisPrompt = `You are an expert algorithmic problem creator.
+    const synthesisPrompt = `You are an expert algorithmic problem creator.
 Given this problem:
 Title: ${parsedMeta.title}
 Description: ${parsedMeta.description}
@@ -192,20 +130,15 @@ Output ONLY a JSON object matching this structure:
   ]
 }`;
 
-      if (groq) {
-        const synthesisCompletion = await groq.chat.completions.create({
-          messages: [{ role: "user", content: synthesisPrompt }],
-          model: "llama-3.3-70b-versatile",
-          temperature: 0.1,
-        });
+    const synthesisCompletion = await groq.chat.completions.create({
+      messages: [{ role: "user", content: synthesisPrompt }],
+      model: "llama-3.3-70b-versatile",
+      temperature: 0.1,
+    });
 
-        const synthData = parseJsonResponse(synthesisCompletion.choices[0].message.content || "{}");
-        solutionCode = synthData.solutionCode || "";
-        testCases = synthData.testCases || [];
-      }
-    } else {
-      console.log(`[Pipeline] Step 3: CI/Mock test cases and Python solution ready (${testCases.length} test cases).`);
-    }
+    const synthData = parseJsonResponse(synthesisCompletion.choices[0].message.content || "{}");
+    let solutionCode = synthData.solutionCode || "";
+    let testCases = synthData.testCases || [];
 
     // =========================================================================
     // STEP 4: Docker Sandbox Execution & Self-Correction Healing Loop
@@ -237,7 +170,7 @@ Output ONLY a JSON object matching this structure:
 
         // Self-Healing Retry Loop
         retryCount++;
-        if (retryCount <= maxRetries && groq) {
+        if (retryCount <= maxRetries) {
           console.warn(`[Pipeline] Sandbox validation failed on attempt ${retryCount}. Triggering AI Self-Correction...`);
           const failedCase = valData.results?.find((r: any) => !r.passed) || {};
           

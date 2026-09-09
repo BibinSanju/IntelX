@@ -10,14 +10,6 @@ on:
     - cron: '30 20 * * *'
   workflow_dispatch:
     inputs:
-      e2e_mode:
-        description: 'E2E Test Mode (mock: zero-cost fast tests | live: live Groq API liveness probe)'
-        required: true
-        default: 'mock'
-        type: choice
-        options:
-          - mock
-          - live
       skip_docker:
         description: 'Skip Docker container verification to accelerate pipeline'
         required: false
@@ -198,8 +190,6 @@ jobs:
       EXECUTOR_URL: http://localhost:8080
       VITE_API_BASE: http://localhost:3000
       GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
-      # Use mock AI for PRs & manual mock runs to prevent flakiness; use live Groq on nightly monitor or when requested
-      MOCK_AI: ${{ (github.event_name == 'pull_request' || inputs.e2e_mode == 'mock') && 'true' || (secrets.GROQ_API_KEY == '' && 'true' || 'false') }}
 
     services:
       postgres:
@@ -293,7 +283,6 @@ jobs:
           echo "| **384-d Embedding & Dedup** | ✅ Passed | Cosine similarity bounds and duplicate detection verified |" >> $GITHUB_STEP_SUMMARY
           echo "| **Sandbox Execution & Security** | ✅ Passed | 2.0s infinite loop timeout & memory isolation enforced |" >> $GITHUB_STEP_SUMMARY
           echo "| **E2E Feeder Pipeline** | ${{ job.status == 'success' && '✅ Passed' || '❌ Failed' }} | End-to-end ingestion, 10/10 sandbox check, and Staging UI |" >> $GITHUB_STEP_SUMMARY
-          echo "| **AI Execution Mode** | ℹ️ ${{ env.MOCK_AI == 'true' && 'Deterministic Test Mock' || 'Live Groq Llama-3.3' }} | Mode: ${{ env.MOCK_AI == 'true' && 'Mock' || 'Live' }} |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "> Run ID: \`${{ github.run_id }}\` | Commit: \`${{ github.sha }}\` | Branch: \`${{ github.ref_name }}\`" >> $GITHUB_STEP_SUMMARY
 

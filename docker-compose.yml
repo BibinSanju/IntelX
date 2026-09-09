@@ -50,7 +50,6 @@ services:
       DIRECT_URL: postgresql://admin:adminpassword@postgres:5432/placement_portal
       EXECUTOR_URL: http://executor:8080
       GROQ_API_KEY: ${GROQ_API_KEY:-}
-      MOCK_AI: ${MOCK_AI:-false}
     healthcheck:
       test: ["CMD-SHELL", "node -e \"require('http').get('http://localhost:3000/', (r) => { process.exit(r.statusCode === 200 ? 0 : 1); });\""]
       interval: 5s
