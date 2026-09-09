@@ -12,6 +12,35 @@ const adapter = new PrismaPg(pool);
 const prisma = new PrismaClient({ adapter });
 
 const EXECUTOR_URL = process.env.EXECUTOR_URL || 'http://localhost:8080';
+const PRIMARY_MODEL = process.env.GROQ_MODEL || 'llama-3.1-8b-instant';
+
+async function createChatCompletion(groq: Groq, options: { messages: any[]; temperature?: number }) {
+  const candidateModels = [
+    PRIMARY_MODEL,
+    'llama-3.1-8b-instant',
+    'llama3-8b-8192',
+    'llama-3.3-70b-versatile',
+  ];
+  const models = [...new Set(candidateModels.filter(Boolean))] as string[];
+
+  let lastError: any;
+  for (const model of models) {
+    try {
+      return await groq.chat.completions.create({
+        ...options,
+        model,
+      });
+    } catch (err: any) {
+      lastError = err;
+      if (err.status === 404 || err.code === 'model_not_found' || err.message?.includes('does not exist') || err.message?.includes('access to it')) {
+        console.warn(`[Pipeline] Model '${model}' not accessible on this tier. Trying next model candidate...`);
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw lastError;
+}
 
 export async function processQuestionInBackground(stagedQuestionId: string) {
   try {
@@ -55,9 +84,8 @@ Output a valid JSON object matching this structure EXACTLY (no markdown, no back
   "strategy": "Optimal algorithm pattern (e.g., BFS / Dynamic Programming) and Big-O Time & Space complexity"
 }`;
 
-    const formalizeCompletion = await groq.chat.completions.create({
+    const formalizeCompletion = await createChatCompletion(groq, {
       messages: [{ role: "user", content: formalizePrompt }],
-      model: "llama-3.3-70b-versatile",
       temperature: 0.1,
     });
 
@@ -130,9 +158,8 @@ Output ONLY a JSON object matching this structure:
   ]
 }`;
 
-    const synthesisCompletion = await groq.chat.completions.create({
+    const synthesisCompletion = await createChatCompletion(groq, {
       messages: [{ role: "user", content: synthesisPrompt }],
-      model: "llama-3.3-70b-versatile",
       temperature: 0.1,
     });
 
@@ -188,9 +215,8 @@ ${solutionCode}
 Please fix either the solution code or the expected output so that they correctly agree.
 Output ONLY JSON with the fixed "solutionCode" and "testCases" array.`;
 
-          const healCompletion = await groq.chat.completions.create({
+          const healCompletion = await createChatCompletion(groq, {
             messages: [{ role: "user", content: healPrompt }],
-            model: "llama-3.3-70b-versatile",
             temperature: 0.1,
           });
 
