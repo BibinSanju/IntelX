@@ -275,6 +275,16 @@ jobs:
       - name: 🧪 Execute Playwright Feeder E2E Suite
         run: npx -y playwright test e2e/feeder-flow.spec.ts --project=chromium
 
+      - name: 📋 Dump Service Logs on E2E Failure
+        if: failure()
+        run: |
+          echo "=== EXECUTOR LOGS ==="
+          cat /tmp/executor.log || true
+          echo "=== BACKEND LOGS ==="
+          cat /tmp/backend.log || true
+          echo "=== FRONTEND LOGS ==="
+          cat /tmp/frontend.log || true
+
       - name: 📊 Generate GitHub Step Summary Report
         if: always()
         run: |
