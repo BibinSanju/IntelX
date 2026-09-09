@@ -185,10 +185,10 @@ jobs:
     timeout-minutes: 15
 
     env:
-      DATABASE_URL: postgresql://admin:adminpassword@localhost:5432/placement_portal
-      DIRECT_URL: postgresql://admin:adminpassword@localhost:5432/placement_portal
-      EXECUTOR_URL: http://localhost:8080
-      VITE_API_BASE: http://localhost:3000
+      DATABASE_URL: postgresql://admin:adminpassword@127.0.0.1:5432/placement_portal
+      DIRECT_URL: postgresql://admin:adminpassword@127.0.0.1:5432/placement_portal
+      EXECUTOR_URL: http://127.0.0.1:8080
+      VITE_API_BASE: http://127.0.0.1:3000
       GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
 
     services:
@@ -228,40 +228,44 @@ jobs:
           cd ../frontend && npm ci || npm install
           cd ..
 
-      - name: 🗄️ Prepare Database Schema
+      - name: 🗄️ Prepare Database Schema & Prisma Client
         run: |
           cd backend
+          npx prisma generate
           npx prisma db push --accept-data-loss
 
       - name: 🚀 Start Services (Executor + Backend + Frontend)
         run: |
           echo "Starting Executor on :8080..."
-          (cd executor && PORT=8080 node server.js) &
+          (cd executor && PORT=8080 node server.js) > /tmp/executor.log 2>&1 &
           
           echo "Starting Backend on :3000..."
-          (cd backend && PORT=3000 npx tsx src/index.ts) &
+          (cd backend && PORT=3000 npx tsx src/index.ts) > /tmp/backend.log 2>&1 &
           
           echo "Starting Frontend on :5173..."
-          (cd frontend && npm run dev -- --host --port 5173) &
+          (cd frontend && npx vite --host 0.0.0.0 --port 5173) > /tmp/frontend.log 2>&1 &
           
           echo "Waiting for services to become healthy..."
-          for i in {1..30}; do
-            if curl -s http://localhost:8080/health > /dev/null && \
-               curl -s http://localhost:3000/health > /dev/null && \
-               curl -s http://localhost:5173/ > /dev/null; then
+          for i in {1..35}; do
+            if curl -s http://127.0.0.1:8080/health > /dev/null && \
+               curl -s http://127.0.0.1:3000/health > /dev/null && \
+               curl -s http://127.0.0.1:5173/ > /dev/null; then
               echo "✅ All services healthy on attempt $i!"
               break
             fi
             sleep 1
           done
 
-          if ! curl -s http://localhost:8080/health > /dev/null || \
-             ! curl -s http://localhost:3000/health > /dev/null || \
-             ! curl -s http://localhost:5173/ > /dev/null; then
-            echo "❌ Service readiness timeout! Diagnostics:"
-            curl -v http://localhost:8080/health || echo "Executor down"
-            curl -v http://localhost:3000/health || echo "Backend down"
-            curl -v http://localhost:5173/ || echo "Frontend down"
+          if ! curl -s http://127.0.0.1:8080/health > /dev/null || \
+             ! curl -s http://127.0.0.1:3000/health > /dev/null || \
+             ! curl -s http://127.0.0.1:5173/ > /dev/null; then
+            echo "❌ Service readiness timeout! Printing service diagnostic logs:"
+            echo "=== EXECUTOR LOG ==="
+            cat /tmp/executor.log || true
+            echo "=== BACKEND LOG ==="
+            cat /tmp/backend.log || true
+            echo "=== FRONTEND LOG ==="
+            cat /tmp/frontend.log || true
             exit 1
           fi
 

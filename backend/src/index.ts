@@ -437,5 +437,6 @@ app.get('/questions/:id', async (c) => {
 
 serve({
   fetch: app.fetch,
-  port
+  port,
+  hostname: '0.0.0.0'
 })
