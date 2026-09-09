@@ -9,7 +9,7 @@ export default defineConfig({
     path: "prisma/migrations",
   },
   datasource: {
-    url: env("DATABASE_URL"),
-    directUrl: env("DIRECT_URL")
+    url: process.env.DATABASE_URL || "postgresql://placeholder:placeholder@localhost:5432/db",
+    directUrl: process.env.DIRECT_URL || process.env.DATABASE_URL || "postgresql://placeholder:placeholder@localhost:5432/db"
   },
 });

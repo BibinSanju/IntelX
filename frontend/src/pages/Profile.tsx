@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 import { useAuthStore } from '../store/useAuthStore';
-import { CheckCircle, MessageSquare, Star, Github, Linkedin } from 'lucide-react';
+import { CheckCircle } from 'lucide-react';
 import './Profile.css';
 
 const API_BASE = import.meta.env.VITE_API_BASE || 'https://intelx-148e.onrender.com';
@@ -141,36 +141,9 @@ export default function Profile() {
             <div className="user-details">
               <h1>{profileData.username}</h1>
               <p className="username-handle">@{profileData.username.toLowerCase()}</p>
-              <div className="rank-info">
-                Rank <span>{rank.toLocaleString()}</span>
-              </div>
+              <p className="text-muted text-xs mt-1">Joined {new Date(profileData.joinedAt).toLocaleDateString()}</p>
             </div>
           </div>
-
-          <button className="edit-profile-btn">Edit Profile</button>
-
-          <div className="social-links">
-            <a href="#" className="social-link"><Github size={16} /> {profileData.username}-github</a>
-            <a href="#" className="social-link"><Linkedin size={16} /> in/{profileData.username}-linkedin</a>
-          </div>
-        </div>
-
-        <div className="community-stats-card glass-panel">
-          <h3>Community Stats</h3>
-          <ul className="stats-list">
-            <li>
-              <div className="stat-label"><CheckCircle size={16} className="icon-cyan" /> Solution</div>
-              <div className="stat-value">{solution}</div>
-            </li>
-            <li>
-              <div className="stat-label"><MessageSquare size={16} className="icon-green" /> Discuss</div>
-              <div className="stat-value">{discuss}</div>
-            </li>
-            <li>
-              <div className="stat-label"><Star size={16} className="icon-orange" /> Reputation</div>
-              <div className="stat-value">{reputation}</div>
-            </li>
-          </ul>
         </div>
       </aside>
 

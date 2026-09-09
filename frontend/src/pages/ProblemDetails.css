@@ -1,0 +1,58 @@
+.problem-details-container {
+  padding-top: 32px;
+  padding-bottom: 64px;
+  max-width: 900px;
+}
+
+.problem-details-card {
+  padding: 32px;
+}
+
+.problem-details-header .problem-title {
+  font-size: 2rem;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+
+.problem-meta-badges {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.divider {
+  border: 0;
+  border-top: 1px solid var(--border-color);
+  margin: 24px 0;
+}
+
+.problem-description {
+  color: var(--text-secondary);
+  line-height: 1.8;
+  font-size: 1.05rem;
+}
+
+.problem-description pre, .problem-description code {
+  font-family: var(--font-mono);
+  background: rgba(0, 0, 0, 0.4);
+  border-radius: 6px;
+}
+
+.testcases-title {
+  justify-content: flex-start;
+  gap: 8px;
+  font-size: 1.25rem;
+  font-weight: 600;
+  margin-bottom: 16px;
+  color: var(--text-primary);
+}
+
+.testcases-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.example-box {
+  border: 1px solid var(--border-color);
+}

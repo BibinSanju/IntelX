@@ -21,7 +21,9 @@ export default function Navbar() {
         </Link>
         
         <div className="nav-links flex-center">
+          <Link to="/submit-prompt" className="nav-link">Submit Question</Link>
           <Link to="/problems" className="nav-link">Problems</Link>
+          <Link to="/staging" className="nav-link">Staging</Link>
           <Link to="/export" className="nav-link">Export</Link>
           
           {isAuthenticated ? (

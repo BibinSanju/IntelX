@@ -1,0 +1,220 @@
+.staging-container {
+  padding: 2rem;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.staging-header {
+  margin-bottom: 1.5rem;
+}
+
+.staging-tabs {
+  margin-bottom: 1.5rem;
+  border-bottom: 1px solid var(--border-color);
+  padding-bottom: 8px;
+}
+
+.tab-btn {
+  background: transparent;
+  border: none;
+  padding: 8px 16px;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  font-weight: 500;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.tab-btn:hover {
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.tab-btn.active {
+  color: var(--accent-primary, #6366f1);
+  background: rgba(99, 102, 241, 0.1);
+  border: 1px solid rgba(99, 102, 241, 0.3);
+}
+
+.bulk-action-bar {
+  padding: 12px 20px;
+  margin-bottom: 1.5rem;
+  border: 1px solid var(--accent-primary);
+  background: rgba(99, 102, 241, 0.08);
+  border-radius: 8px;
+}
+
+.staged-grid {
+  display: grid;
+  gap: 1.25rem;
+}
+
+.staged-card {
+  padding: 1.5rem;
+  border-radius: 10px;
+  background: var(--bg-card, #1a1a1a);
+  border: 1px solid var(--border-color, #333);
+  transition: transform 0.2s ease, border-color 0.2s ease;
+}
+
+.staged-card:hover {
+  border-color: #555;
+}
+
+.staged-card.selected {
+  border-color: var(--accent-primary, #6366f1);
+  background: rgba(99, 102, 241, 0.04);
+}
+
+.staged-card.status-STAGED {
+  border-left: 4px solid #10b981;
+}
+
+.staged-card.status-PENDING_AI {
+  border-left: 4px solid #f59e0b;
+}
+
+.staged-card.status-DUPLICATE_FOUND {
+  border-left: 4px solid #8b5cf6;
+}
+
+.staged-card.status-FAILED_SANDBOX,
+.staged-card.status-FAILED_AI {
+  border-left: 4px solid #ef4444;
+}
+
+.checkbox-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  color: var(--text-secondary);
+}
+
+.badge-staged {
+  background: rgba(16, 185, 129, 0.15);
+  color: #10b981;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.badge-pending_ai {
+  background: rgba(245, 158, 11, 0.15);
+  color: #f59e0b;
+  border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+.badge-duplicate_found {
+  background: rgba(139, 92, 246, 0.15);
+  color: #8b5cf6;
+  border: 1px solid rgba(139, 92, 246, 0.3);
+}
+
+.badge-failed_sandbox,
+.badge-failed_ai {
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.badge-success {
+  background: rgba(16, 185, 129, 0.15);
+  color: #10b981;
+}
+
+.staged-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.5rem;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  margin-top: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.raw-snippet {
+  max-height: 80px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  line-height: 1.5;
+  background: rgba(0, 0, 0, 0.2);
+  padding: 10px;
+  border-radius: 6px;
+}
+
+/* Modals */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(4px);
+  z-index: 1000;
+  padding: 20px;
+}
+
+.modal-card {
+  width: 100%;
+  max-width: 600px;
+  background: #18181b;
+  border: 1px solid #333;
+  border-radius: 12px;
+  padding: 24px;
+}
+
+.modal-card.inspector-modal {
+  max-width: 1000px;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.inspector-body {
+  overflow-y: auto;
+  max-height: calc(90vh - 160px);
+}
+
+.tc-box {
+  border: 1px solid var(--border-color);
+  background: rgba(0, 0, 0, 0.3);
+}
+
+.close-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.close-btn:hover {
+  color: var(--text-primary);
+}
+
+.btn-approve {
+  background: #10b981;
+  color: white;
+  border: none;
+  padding: 6px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.btn-approve:hover {
+  background: #059669;
+}
+
+.btn-delete {
+  background: transparent;
+  color: #ef4444;
+  border: 1px solid #ef4444;
+  padding: 6px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.btn-delete:hover {
+  background: rgba(239, 68, 68, 0.1);
+}

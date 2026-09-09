@@ -19,6 +19,10 @@ model StagedQuestion {
   description     String?
   constraints     String?
   category        String?
+  subtopic        String?  @default("General")
+  solutionCode    String?
+  solutionLang    String?  @default("python")
+  taxonomyPath    String?
   
   // Vector Embeddings for Deduplication
   embedding       Unsupported("vector(384)")?

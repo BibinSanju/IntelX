@@ -1,0 +1,73 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg15
+    container_name: feeder-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: adminpassword
+      POSTGRES_DB: placement_portal
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U admin -d placement_portal"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  executor:
+    build:
+      context: ./executor
+      dockerfile: Dockerfile
+    container_name: feeder-executor
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"require('http').get('http://localhost:8080/health', (r) => { process.exit(r.statusCode === 200 ? 0 : 1); });\""]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: feeder-backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      executor:
+        condition: service_healthy
+    ports:
+      - "3000:3000"
+    environment:
+      PORT: 3000
+      DATABASE_URL: postgresql://admin:adminpassword@postgres:5432/placement_portal
+      DIRECT_URL: postgresql://admin:adminpassword@postgres:5432/placement_portal
+      EXECUTOR_URL: http://executor:8080
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      MOCK_AI: ${MOCK_AI:-false}
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"require('http').get('http://localhost:3000/', (r) => { process.exit(r.statusCode === 200 ? 0 : 1); });\""]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: feeder-frontend
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "5173:80"
+
+volumes:
+  pgdata:
