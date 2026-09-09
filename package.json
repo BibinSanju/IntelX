@@ -1,0 +1,23 @@
+{
+  "name": "placement-portal",
+  "version": "1.0.0",
+  "description": "Welcome to **IntelX**, an intelligent, self-updating coding platform built to provide developers with a comprehensive environment to practice algorithms, system design, and theory.",
+  "main": "index.js",
+  "scripts": {
+    "test:e2e": "playwright test --project=chromium"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/BibinSanju/IntelX.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/BibinSanju/IntelX/issues"
+  },
+  "homepage": "https://github.com/BibinSanju/IntelX#readme",
+  "devDependencies": {
+    "@playwright/test": "^1.63.0"
+  }
+}

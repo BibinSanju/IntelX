@@ -232,9 +232,11 @@ jobs:
 
       - name: 📦 Install All Dependencies
         run: |
+          npm install
           cd executor && npm ci || npm install
           cd ../backend && npm ci --ignore-scripts || npm install
           cd ../frontend && npm ci || npm install
+          cd ..
 
       - name: 🗄️ Prepare Database Schema
         run: |
@@ -244,14 +246,13 @@ jobs:
       - name: 🚀 Start Services (Executor + Backend + Frontend)
         run: |
           echo "Starting Executor on :8080..."
-          PORT=8080 node executor/server.js &
+          (cd executor && PORT=8080 node server.js) &
           
           echo "Starting Backend on :3000..."
-          PORT=3000 npx tsx backend/src/index.ts &
+          (cd backend && PORT=3000 npx tsx src/index.ts) &
           
           echo "Starting Frontend on :5173..."
-          cd frontend && npm run dev -- --host --port 5173 &
-          cd ..
+          (cd frontend && npm run dev -- --host --port 5173) &
           
           echo "Waiting for services to become healthy..."
           for i in {1..30}; do
