@@ -197,7 +197,6 @@ jobs:
       DIRECT_URL: postgresql://admin:adminpassword@localhost:5432/placement_portal
       EXECUTOR_URL: http://localhost:8080
       VITE_API_BASE: http://localhost:3000
-      PORT: 3000
       GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
       # Use mock AI for PRs & manual mock runs to prevent flakiness; use live Groq on nightly monitor or when requested
       MOCK_AI: ${{ (github.event_name == 'pull_request' || inputs.e2e_mode == 'mock') && 'true' || (secrets.GROQ_API_KEY == '' && 'true' || 'false') }}
@@ -245,16 +244,14 @@ jobs:
       - name: 🚀 Start Services (Executor + Backend + Frontend)
         run: |
           echo "Starting Executor on :8080..."
-          cd executor
-          node server.js &
+          PORT=8080 node executor/server.js &
           
           echo "Starting Backend on :3000..."
-          cd ../backend
-          npx tsx src/index.ts &
+          PORT=3000 npx tsx backend/src/index.ts &
           
           echo "Starting Frontend on :5173..."
-          cd ../frontend
-          npm run dev -- --host &
+          cd frontend && npm run dev -- --host --port 5173 &
+          cd ..
           
           echo "Waiting for services to become healthy..."
           for i in {1..30}; do
@@ -267,19 +264,21 @@ jobs:
             sleep 1
           done
 
-      - name: 🎭 Cache Playwright Browsers
-        uses: actions/cache@v4
-        id: playwright-cache
-        with:
-          path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-v1.57
+          if ! curl -s http://localhost:8080/health > /dev/null || \
+             ! curl -s http://localhost:3000/health > /dev/null || \
+             ! curl -s http://localhost:5173/ > /dev/null; then
+            echo "❌ Service readiness timeout! Diagnostics:"
+            curl -v http://localhost:8080/health || echo "Executor down"
+            curl -v http://localhost:3000/health || echo "Backend down"
+            curl -v http://localhost:5173/ || echo "Frontend down"
+            exit 1
+          fi
 
       - name: 🎭 Install Playwright Chromium
-        if: steps.playwright-cache.outputs.cache-hit != 'true'
         run: npx -y playwright install --with-deps chromium
 
       - name: 🧪 Execute Playwright Feeder E2E Suite
-        run: npx -y playwright test e2e/feeder-flow.spec.ts
+        run: npx -y playwright test e2e/feeder-flow.spec.ts --project=chromium
 
       - name: 📊 Generate GitHub Step Summary Report
         if: always()

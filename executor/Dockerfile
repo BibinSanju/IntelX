@@ -1,11 +1,11 @@
-FROM node:20-bullseye-slim
+FROM node:20-bookworm-slim
 
-# Install Python, C, C++, and Java (JDK 17)
-RUN apt-get update && apt-get install -y \
+# Install Python, C, C++, and Java JDK
+RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 \
     gcc \
     g++ \
-    openjdk-17-jdk \
+    default-jdk-headless \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
