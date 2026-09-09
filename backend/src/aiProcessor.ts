@@ -21,6 +21,7 @@ async function createChatCompletion(groq: Groq, options: { messages: any[]; temp
     'openai/gpt-oss-20b',
     'qwen/qwen3.8-27b',
     'qwen/qwen3.6-27b',
+    'groq/compound',
     'llama-3.1-8b-instant',
     'llama-3.3-70b-versatile',
   ];
@@ -29,17 +30,15 @@ async function createChatCompletion(groq: Groq, options: { messages: any[]; temp
   let lastError: any;
   for (const model of models) {
     try {
+      console.log(`[Pipeline] Attempting Groq completion with model '${model}'...`);
       return await groq.chat.completions.create({
         ...options,
         model,
       });
     } catch (err: any) {
       lastError = err;
-      if (err.status === 404 || err.code === 'model_not_found' || err.message?.includes('does not exist') || err.message?.includes('access to it')) {
-        console.warn(`[Pipeline] Model '${model}' not accessible on this tier. Trying next model candidate...`);
-        continue;
-      }
-      throw err;
+      console.warn(`[Pipeline] Model '${model}' failed (${err.status || err.name}: ${err.message}). Trying next candidate...`);
+      continue;
     }
   }
   throw lastError;
@@ -265,12 +264,19 @@ Output ONLY JSON with the fixed "solutionCode" and "testCases" array.`;
 
 function parseJsonResponse(raw: string): any {
   let cleaned = raw.trim();
-  if (cleaned.startsWith('```json')) cleaned = cleaned.substring(7);
-  if (cleaned.startsWith('```')) cleaned = cleaned.substring(3);
-  if (cleaned.endsWith('```')) cleaned = cleaned.substring(0, cleaned.length - 3);
+  cleaned = cleaned.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/\s*```$/, '');
   try {
-    return JSON.parse(cleaned.trim());
+    return JSON.parse(cleaned);
   } catch {
+    const start = cleaned.indexOf('{');
+    const end = cleaned.lastIndexOf('}');
+    if (start !== -1 && end !== -1 && end > start) {
+      try {
+        return JSON.parse(cleaned.substring(start, end + 1));
+      } catch (e) {
+        console.error('[Pipeline] JSON parse failed on extracted slice:', e);
+      }
+    }
     return {};
   }
 }
