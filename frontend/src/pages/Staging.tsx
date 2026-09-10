@@ -19,7 +19,7 @@ interface StagedQuestion {
   status: string;
   source: string;
   createdAt: string;
-  testCases?: Array<{ input: string; expectedOutput: string }>;
+  testCases?: Array<{ input: string; expectedOutput?: string; output?: string }>;
   sandboxVerdict?: string | null;
 }
 
