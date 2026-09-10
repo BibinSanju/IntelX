@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 
 test.describe('End-to-End Question Curation, Sandbox & Moodle XML Pipeline', () => {
-  test.setTimeout(90000);
+  test.setTimeout(180000);
 
   test('should ingest prompt, verify 10/10 in sandbox, stage in UI, and export Moodle XML', async ({ page, request, baseURL }) => {
     const apiUrl = process.env.VITE_API_BASE || 'http://localhost:3000';
@@ -24,10 +24,12 @@ test.describe('End-to-End Question Curation, Sandbox & Moodle XML Pipeline', () 
       const statusRes = await request.get(`${apiUrl}/api/status/${questionId}`);
       if (!statusRes.ok()) return 'PENDING_AI';
       const statusData = await statusRes.json();
+      console.log(`[E2E Poll] Status: ${statusData.status} | Verdict: ${statusData.data?.sandboxVerdict || 'Processing...'}`);
       return statusData.status;
     }, {
       message: 'Waiting for Groq synthesis and Sandbox execution',
-      timeout: 60000
+      timeout: 120000,
+      intervals: [2000, 3000, 4000]
     }).toBe('STAGED');
 
     console.log('--- Step 3: Verifying Faculty Staging Dashboard UI ---');

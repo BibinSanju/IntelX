@@ -236,12 +236,20 @@ jobs:
           npx prisma db push --accept-data-loss
 
       - name: 🚀 Start Services (Executor + Backend + Frontend)
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
         run: |
+          if [ -z "$GROQ_API_KEY" ]; then
+            echo "::warning::GROQ_API_KEY secret is not set or empty in GitHub Secrets!"
+          else
+            echo "✅ GROQ_API_KEY secret verified (length: ${#GROQ_API_KEY})"
+          fi
+
           echo "Starting Executor on :8080..."
           (cd executor && PORT=8080 node server.js) > /tmp/executor.log 2>&1 &
           
           echo "Starting Backend on :3000..."
-          (cd backend && PORT=3000 npx tsx src/index.ts) > /tmp/backend.log 2>&1 &
+          (cd backend && PORT=3000 GROQ_API_KEY="$GROQ_API_KEY" npx tsx src/index.ts) > /tmp/backend.log 2>&1 &
           
           echo "Starting Frontend on :5173..."
           (cd frontend && npx vite --host 0.0.0.0 --port 5173) > /tmp/frontend.log 2>&1 &

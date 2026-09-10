@@ -64,14 +64,18 @@ export async function processQuestionInBackground(stagedQuestionId: string) {
     let groq_api_key = (process.env.GROQ_API_KEY || '').trim();
     if (!groq_api_key) {
       try {
-        const envParsed = dotenv.config({ path: '/app/.env' }).parsed;
+        const envParsed = dotenv.config({ path: '/app/.env' }).parsed 
+          || dotenv.config({ path: '../.env' }).parsed 
+          || dotenv.config().parsed;
         groq_api_key = (envParsed?.GROQ_API_KEY || '').trim();
       } catch {}
     }
     groq_api_key = groq_api_key.replace(/^["']|["']$/g, '').trim();
 
+    console.log(`[Pipeline] Starting pipeline for ${stagedQuestionId}. Key detected: ${Boolean(groq_api_key)} (length: ${groq_api_key.length})`);
+
     if (!groq_api_key) {
-      console.error('[Pipeline] GROQ_API_KEY is missing. Cannot process question.');
+      console.error('[Pipeline] GROQ_API_KEY is missing or empty. Cannot process question.');
       await prisma.stagedQuestion.update({
         where: { id: stagedQuestionId },
         data: { status: 'FAILED_AI' }
