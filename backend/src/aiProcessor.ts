@@ -14,7 +14,7 @@ const prisma = new PrismaClient({ adapter });
 const EXECUTOR_URL = process.env.EXECUTOR_URL || 'http://localhost:8080';
 const PRIMARY_MODEL = process.env.GROQ_MODEL || 'openai/gpt-oss-120b';
 
-async function createChatCompletion(groq: Groq, options: { messages: any[]; temperature?: number }) {
+async function createChatCompletion(groq: Groq, options: { messages: any[]; temperature?: number; response_format?: any }) {
   const candidateModels = [
     PRIMARY_MODEL,
     'openai/gpt-oss-120b',
@@ -88,6 +88,7 @@ Output a valid JSON object matching this structure EXACTLY (no markdown, no back
 
     const formalizeCompletion = await createChatCompletion(groq, {
       messages: [{ role: "user", content: formalizePrompt }],
+      response_format: { type: "json_object" },
       temperature: 0.1,
     });
 
@@ -160,69 +161,37 @@ Output ONLY a JSON object matching this structure:
   ]
 }`;
 
-    const synthesisCompletion = await createChatCompletion(groq, {
-      messages: [{ role: "user", content: synthesisPrompt }],
-      temperature: 0.1,
-    });
+    let solutionCode = "";
+    let testCases: any[] = [];
+    let synthAttempts = 0;
+    const maxSynthAttempts = 2;
 
-    const synthData = parseJsonResponse(synthesisCompletion.choices[0].message.content || "{}");
-    let solutionCode = synthData.solutionCode || "";
-    let testCases = Array.isArray(synthData.testCases) ? synthData.testCases : [];
+    while (synthAttempts < maxSynthAttempts && (!solutionCode || testCases.length === 0)) {
+      synthAttempts++;
+      console.log(`[Pipeline] Step 3 (Attempt ${synthAttempts}/${maxSynthAttempts}): Synthesizing solution & 10 test cases via Groq...`);
 
-    // Safeguard: If LLM output was malformed and resulted in empty testcases, fall back to canonical algorithmic template
+      const synthesisCompletion = await createChatCompletion(groq, {
+        messages: [{ role: "user", content: synthesisPrompt }],
+        response_format: { type: "json_object" },
+        temperature: 0.1,
+      });
+
+      const synthData = parseJsonResponse(synthesisCompletion.choices[0].message.content || "{}");
+      solutionCode = synthData.solutionCode || "";
+      testCases = Array.isArray(synthData.testCases) ? synthData.testCases : [];
+
+      if (!solutionCode || testCases.length === 0) {
+        console.warn(`[Pipeline] Synthesis attempt ${synthAttempts} was missing solutionCode or testCases.`);
+      }
+    }
+
     if (!solutionCode || testCases.length === 0) {
-      console.warn('[Pipeline] LLM synthesis returned empty code or testcases. Applying canonical reference solver template...');
-      solutionCode = `import sys
-from collections import deque
-
-def solve():
-    raw = sys.stdin.read().split()
-    if not raw:
-        return
-    R, C = int(raw[0]), int(raw[1])
-    grid = []
-    idx = 2
-    for r in range(R):
-        row = []
-        for c in range(C):
-            row.append(int(raw[idx]))
-            idx += 1
-        grid.append(row)
-    
-    if grid[0][0] == 1 or grid[R-1][C-1] == 1:
-        print(-1)
-        return
-        
-    queue = deque([(0, 0, 0)])
-    visited = {(0, 0)}
-    
-    while queue:
-        r, c, d = queue.popleft()
-        if r == R - 1 and c == C - 1:
-            print(d)
-            return
-        for dr, dc in [(-1,0),(1,0),(0,-1),(0,1)]:
-            nr, nc = r + dr, c + dc
-            if 0 <= nr < R and 0 <= nc < C and grid[nr][nc] == 0 and (nr, nc) not in visited:
-                visited.add((nr, nc))
-                queue.append((nr, nc, d + 1))
-    print(-1)
-
-if __name__ == '__main__':
-    solve()
-`;
-      testCases = [
-        { input: "2 2\n0 0\n0 0\n", expectedOutput: "2" },
-        { input: "2 2\n0 1\n1 0\n", expectedOutput: "-1" },
-        { input: "3 3\n0 0 0\n1 1 0\n0 0 0\n", expectedOutput: "4" },
-        { input: "1 1\n0\n", expectedOutput: "0" },
-        { input: "1 1\n1\n", expectedOutput: "-1" },
-        { input: "1 3\n0 0 0\n", expectedOutput: "2" },
-        { input: "3 1\n0\n1\n0\n", expectedOutput: "-1" },
-        { input: "4 4\n0 0 0 0\n1 1 1 0\n0 0 0 0\n0 1 1 0\n", expectedOutput: "6" },
-        { input: "5 5\n0 0 0 0 0\n0 1 1 1 0\n0 1 0 1 0\n0 1 0 1 0\n0 0 0 0 0\n", expectedOutput: "8" },
-        { input: "5 5\n1 0 0 0 0\n0 0 0 0 0\n0 0 0 0 0\n0 0 0 0 0\n0 0 0 0 0\n", expectedOutput: "-1" }
-      ];
+      console.error(`[Pipeline] LLM failed to synthesize valid solution or test cases after ${maxSynthAttempts} attempts.`);
+      await prisma.stagedQuestion.update({
+        where: { id: stagedQuestionId },
+        data: { status: 'FAILED_AI' }
+      });
+      return;
     }
 
     // =========================================================================
