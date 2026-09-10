@@ -143,6 +143,7 @@ jobs:
 
       - name: 📋 Validate Docker Compose Orchestration Config
         run: |
+          touch .env
           docker compose config
 
       - name: 🔨 Build Executor Sandbox Image
