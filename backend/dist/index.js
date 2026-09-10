@@ -5,10 +5,10 @@ import 'dotenv/config';
 import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { Pool } from 'pg';
-import { PGlite } from '@electric-sql/pglite';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import { Groq } from 'groq-sdk';
+import { processQuestionInBackground } from './aiProcessor.js';
+import { buildMoodleCodeRunnerXml } from './moodleXmlBuilder.js';
 // Prisma 7 explicit connection adapter
 const pool = new Pool({
     connectionString: process.env.DATABASE_URL
@@ -30,6 +30,172 @@ app.use('/*', cors({
 }));
 app.get('/', (c) => {
     return c.json({ status: 'live', message: 'Backend Engine is running 🚀' });
+});
+app.get('/health', (c) => {
+    return c.json({ status: 'healthy', uptime: process.uptime(), timestamp: new Date().toISOString() });
+});
+// Phase 1: Ingestion API (For Scraper & Student Feeder)
+app.post('/api/ingest', async (c) => {
+    try {
+        const { raw_text, source } = await c.req.json();
+        if (!raw_text) {
+            return c.json({ success: false, error: 'raw_text is required' }, 400);
+        }
+        const stagedQuestion = await prisma.stagedQuestion.create({
+            data: {
+                rawText: raw_text,
+                source: source || 'Student',
+                status: 'PENDING_AI',
+            }
+        });
+        // Trigger AI processing in background
+        processQuestionInBackground(stagedQuestion.id).catch(console.error);
+        return c.json({
+            success: true,
+            message: 'Question ingested successfully',
+            questionId: stagedQuestion.id
+        });
+    }
+    catch (error) {
+        console.error('Ingestion error:', error);
+        return c.json({ success: false, error: 'Failed to ingest question' }, 500);
+    }
+});
+// Phase 1: Status Polling API
+app.get('/api/status/:id', async (c) => {
+    try {
+        const id = c.req.param('id');
+        const stagedQuestion = await prisma.stagedQuestion.findUnique({
+            where: { id }
+        });
+        if (!stagedQuestion) {
+            return c.json({ success: false, error: 'Question not found' }, 404);
+        }
+        return c.json({ success: true, status: stagedQuestion.status, data: stagedQuestion });
+    }
+    catch (error) {
+        return c.json({ success: false, error: 'Failed to fetch status' }, 500);
+    }
+});
+// Phase 1: Staged Questions API for Faculty UI (Supports status filter)
+app.get('/api/staged', async (c) => {
+    try {
+        const status = c.req.query('status');
+        const where = status ? { status } : {};
+        const questions = await prisma.stagedQuestion.findMany({
+            where,
+            orderBy: { createdAt: 'desc' }
+        });
+        return c.json({ success: true, data: questions });
+    }
+    catch (error) {
+        return c.json({ success: false, error: 'Failed to fetch staged questions' }, 500);
+    }
+});
+// Phase 1: Export Selected / All Staged Questions as Moodle CodeRunner XML
+app.post('/api/staged/export-xml', async (c) => {
+    try {
+        const { questionIds } = await c.req.json();
+        let questions = [];
+        if (Array.isArray(questionIds) && questionIds.length > 0) {
+            questions = await prisma.stagedQuestion.findMany({
+                where: { id: { in: questionIds } }
+            });
+        }
+        else {
+            questions = await prisma.stagedQuestion.findMany({
+                where: { status: 'STAGED' }
+            });
+        }
+        const formatted = questions.map(q => ({
+            id: q.id,
+            title: q.title || 'Untitled Question',
+            description: q.description || q.rawText,
+            category: q.category || 'DSA',
+            subtopic: q.subtopic || 'General',
+            difficulty: 'Medium',
+            testCases: q.testCases || []
+        }));
+        const xml = buildMoodleCodeRunnerXml(formatted);
+        c.header('Content-Type', 'application/xml');
+        c.header('Content-Disposition', 'attachment; filename="moodle_coderunner_export.xml"');
+        return c.body(xml);
+    }
+    catch (error) {
+        console.error('XML Export error:', error);
+        return c.json({ success: false, error: 'Failed to generate XML' }, 500);
+    }
+});
+// Phase 1: Update Staged Question (Edit title, taxonomy, testcases)
+app.patch('/api/staged/:id', async (c) => {
+    try {
+        const id = c.req.param('id');
+        const body = await c.req.json();
+        const updated = await prisma.stagedQuestion.update({
+            where: { id },
+            data: {
+                ...(body.title && { title: body.title }),
+                ...(body.category && { category: body.category }),
+                ...(body.subtopic && { subtopic: body.subtopic }),
+                ...(body.description && { description: body.description }),
+                ...(body.testCases && { testCases: body.testCases })
+            }
+        });
+        return c.json({ success: true, data: updated });
+    }
+    catch (error) {
+        console.error('Update error:', error);
+        return c.json({ success: false, error: 'Failed to update question' }, 500);
+    }
+});
+// Phase 1: Approve Staged Question API
+app.post('/api/staged/:id/approve', async (c) => {
+    try {
+        const id = c.req.param('id');
+        const stagedQuestion = await prisma.stagedQuestion.findUnique({
+            where: { id }
+        });
+        if (!stagedQuestion || stagedQuestion.status !== 'STAGED') {
+            return c.json({ success: false, error: 'Question not ready for approval' }, 400);
+        }
+        // Move to main Question table
+        const question = await prisma.question.create({
+            data: {
+                title: stagedQuestion.title || 'Untitled',
+                description: stagedQuestion.description || stagedQuestion.rawText,
+                category: stagedQuestion.category || 'General',
+                subtopic: stagedQuestion.subtopic || 'General',
+                type: 'Programming',
+                difficulty: 'Medium',
+                testCases: stagedQuestion.testCases || [],
+                metadata: { constraints: stagedQuestion.constraints || '' }
+            }
+        });
+        // Update status to APPROVED
+        await prisma.stagedQuestion.update({
+            where: { id },
+            data: { status: 'APPROVED' }
+        });
+        return c.json({ success: true, data: question });
+    }
+    catch (error) {
+        console.error('Approval error:', error);
+        return c.json({ success: false, error: 'Failed to approve question' }, 500);
+    }
+});
+// Phase 1: Discard Staged Question API
+app.delete('/api/staged/:id', async (c) => {
+    try {
+        const id = c.req.param('id');
+        await prisma.stagedQuestion.delete({
+            where: { id }
+        });
+        return c.json({ success: true, message: 'Question discarded' });
+    }
+    catch (error) {
+        console.error('Discard error:', error);
+        return c.json({ success: false, error: 'Failed to discard question' }, 500);
+    }
 });
 const JWT_SECRET = process.env.JWT_SECRET || 'hackathon_super_secret';
 // Phase 2: Native Signup API
@@ -214,200 +380,25 @@ app.get('/questions', async (c) => {
         return c.json({ success: false, error: 'Failed to fetch questions' }, 500);
     }
 });
-// Phase 3: Piston Code Execution API (Raw Execution)
-app.post('/execute/code', async (c) => {
+// GET Single Question API
+app.get('/questions/:id', async (c) => {
     try {
-        const { language, version, code } = await c.req.json();
-        const response = await fetch('https://emacs.piston.rs/api/v2/execute', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                language: language,
-                version: version,
-                files: [{ content: code }],
-            })
+        const id = c.req.param('id');
+        const question = await prisma.question.findUnique({
+            where: { id }
         });
-        const result = await response.json();
-        return c.json({ success: true, data: result });
+        if (!question) {
+            return c.json({ success: false, error: 'Question not found' }, 404);
+        }
+        return c.json({ success: true, data: question });
     }
     catch (error) {
-        console.error('Code execution error:', error);
-        return c.json({ success: false, error: 'Code execution failed' }, 500);
-    }
-});
-// Phase 3: Theory Question Evaluation API
-app.post('/evaluate-theory', async (c) => {
-    try {
-        const { questionId, answer, userId } = await c.req.json();
-        const question = await prisma.question.findUnique({ where: { id: questionId } });
-        if (!question || !question.metadata) {
-            return c.json({ success: false, error: 'Question or metadata not found' }, 404);
-        }
-        const metadata = question.metadata;
-        const expectedAnswer = metadata.detailed_answer || metadata.concise_answer || "";
-        const rubric = metadata.scoring_rubric || {};
-        const groq_api_key = process.env.GROQ_API_KEY;
-        if (!groq_api_key) {
-            return c.json({ success: false, error: 'Groq API key is missing' }, 500);
-        }
-        const groq = new Groq({ apiKey: groq_api_key });
-        const prompt = `You are an expert technical interviewer evaluating a candidate's answer to a theory/system design question.
-Question: ${question.title}
-Expected Answer/Concepts: ${expectedAnswer}
-Scoring Rubric: ${JSON.stringify(rubric)}
-
-Candidate's Answer:
-${answer}
-
-Evaluate the candidate's answer based on the rubric and expected concepts.
-Output ONLY a JSON object exactly matching this structure, with no markdown formatting:
-{
-  "accuracyScore": <number 0-100>,
-  "feedback": "<string explaining the score and what was good/missing>"
-}
-`;
-        const chatCompletion = await groq.chat.completions.create({
-            messages: [{ role: "user", content: prompt }],
-            model: "llama-3.3-70b-versatile",
-            temperature: 0.1,
-        });
-        let responseText = chatCompletion.choices[0].message.content?.trim() || "{}";
-        if (responseText.startsWith("\`\`\`json"))
-            responseText = responseText.replace("\`\`\`json", "").trim();
-        if (responseText.startsWith("\`\`\`"))
-            responseText = responseText.replace("\`\`\`", "").trim();
-        if (responseText.endsWith("\`\`\`"))
-            responseText = responseText.replace(/\`\`\`$/, "").trim();
-        const evaluation = JSON.parse(responseText);
-        if (userId) {
-            await prisma.submission.create({
-                data: {
-                    userId,
-                    questionId,
-                    status: 'Evaluated',
-                    code: answer,
-                    language: 'Text',
-                    score: evaluation.accuracyScore,
-                    feedback: evaluation.feedback
-                }
-            });
-        }
-        return c.json({ success: true, data: evaluation });
-    }
-    catch (error) {
-        console.error('Theory evaluation error:', error);
-        return c.json({ success: false, error: 'Evaluation failed: ' + (error.message || 'Unknown error') }, 500);
-    }
-});
-// Phase 3: Piston Code Submit API (Runs against test cases)
-app.post('/execute/submit', async (c) => {
-    try {
-        const { questionId, language, version, code, userId, isRun } = await c.req.json();
-        const question = await prisma.question.findUnique({ where: { id: questionId } });
-        if (!question || !question.testCases) {
-            return c.json({ success: false, error: 'Question or test cases not found' }, 404);
-        }
-        let testCases = question.testCases;
-        if (isRun) {
-            testCases = testCases.slice(0, 2);
-        }
-        const results = [];
-        let allPassed = true;
-        for (let i = 0; i < testCases.length; i++) {
-            const tc = testCases[i];
-            const EXECUTOR_URL = process.env.EXECUTOR_URL || 'https://my-free-executor.onrender.com';
-            const response = await fetch(`${EXECUTOR_URL}/execute`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    language: language,
-                    code: code, // Pass the exact code the user wrote
-                    input: tc.input // Send the Standard IO input string
-                })
-            });
-            const result = await response.json();
-            if (result.status === 'error') {
-                return c.json({ success: false, error: 'Execution Error: ' + result.output }, 500);
-            }
-            const actualOutput = result.output?.trim() || "";
-            const expectedStr = (typeof tc.expectedOutput === 'string' ? tc.expectedOutput : JSON.stringify(tc.expectedOutput)).trim();
-            const passed = actualOutput === expectedStr;
-            if (!passed)
-                allPassed = false;
-            results.push({
-                testCase: i + 1,
-                input: tc.input,
-                expectedOutput: expectedStr,
-                actualOutput,
-                passed,
-                error: undefined
-            });
-        }
-        if (userId && !isRun) {
-            await prisma.submission.create({
-                data: {
-                    userId,
-                    questionId,
-                    status: allPassed ? 'Pass' : 'Fail',
-                    code,
-                    language
-                }
-            });
-        }
-        return c.json({ success: true, data: { results, allPassed } });
-    }
-    catch (error) {
-        console.error('Submit error:', error);
-        return c.json({ success: false, error: 'Code execution engine unreachable: ' + (error.message || 'Unknown error') }, 500);
-    }
-});
-// Phase 3: SQL Execution Engine (In-Memory Postgres)
-app.post('/execute/sql', async (c) => {
-    try {
-        const { schema, query } = await c.req.json();
-        const db = new PGlite();
-        if (schema) {
-            await db.exec(schema);
-        }
-        const result = await db.query(query);
-        return c.json({ success: true, data: result.rows });
-    }
-    catch (error) {
-        console.error('SQL execution error:', error);
-        return c.json({ success: false, error: error.message }, 400);
-    }
-});
-// Phase 4: Push to GitHub API
-app.post('/push-to-github', async (c) => {
-    try {
-        const { token, owner, repo, path, code, commitMessage } = await c.req.json();
-        const url = `https://api.github.com/repos/${owner}/${repo}/contents/${path}`;
-        const content = Buffer.from(code).toString('base64');
-        const response = await fetch(url, {
-            method: 'PUT',
-            headers: {
-                'Authorization': `Bearer ${token}`,
-                'Accept': 'application/vnd.github+json',
-                'X-GitHub-Api-Version': '2022-11-28',
-                'User-Agent': 'Hono-Backend-Engine'
-            },
-            body: JSON.stringify({
-                message: commitMessage || 'feat: automated commit from hackathon IDE',
-                content: content
-            })
-        });
-        const result = await response.json();
-        if (!response.ok) {
-            return c.json({ success: false, error: result.message }, response.status);
-        }
-        return c.json({ success: true, url: result.content.html_url });
-    }
-    catch (error) {
-        console.error('GitHub Push Error:', error);
-        return c.json({ success: false, error: 'Failed to push to GitHub' }, 500);
+        console.error(error);
+        return c.json({ success: false, error: 'Failed to fetch question' }, 500);
     }
 });
 serve({
     fetch: app.fetch,
-    port
+    port,
+    hostname: '0.0.0.0'
 });

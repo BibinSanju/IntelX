@@ -3,7 +3,8 @@ import { PrismaPg } from '@prisma/adapter-pg';
 import { Pool } from 'pg';
 import { Groq } from 'groq-sdk';
 import { computeTextEmbedding, calculateCosineSimilarity } from './embeddingService.js';
-import 'dotenv/config';
+import dotenv from 'dotenv';
+dotenv.config();
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL
@@ -14,25 +15,30 @@ const prisma = new PrismaClient({ adapter });
 const EXECUTOR_URL = process.env.EXECUTOR_URL || 'http://localhost:8080';
 const PRIMARY_MODEL = process.env.GROQ_MODEL || 'openai/gpt-oss-120b';
 
-async function createChatCompletion(groq: Groq, options: { messages: any[]; temperature?: number; response_format?: any }) {
+async function createChatCompletion(groq: Groq, options: { messages: any[]; temperature?: number; response_format?: any; max_tokens?: number }) {
   const candidateModels = [
     PRIMARY_MODEL,
     'openai/gpt-oss-120b',
     'openai/gpt-oss-20b',
+    'groq/compound-mini',
     'qwen/qwen3.8-27b',
     'qwen/qwen3.6-27b',
-    'groq/compound',
     'llama-3.1-8b-instant',
     'llama-3.3-70b-versatile',
   ];
   const models = [...new Set(candidateModels.filter(Boolean))] as string[];
+
+  // Note: response_format: { type: "json_object" } triggers json_validate_failed bugs on gpt-oss models on Groq.
+  // We remove response_format so the LLM outputs natural JSON, which parseJsonResponse cleans and parses reliably.
+  const { response_format, ...safeOptions } = options;
 
   let lastError: any;
   for (const model of models) {
     try {
       console.log(`[Pipeline] Attempting Groq completion with model '${model}'...`);
       return await groq.chat.completions.create({
-        ...options,
+        max_tokens: options.max_tokens || 2048,
+        ...safeOptions,
         model,
       });
     } catch (err: any) {
@@ -55,7 +61,15 @@ export async function processQuestionInBackground(stagedQuestionId: string) {
       return;
     }
 
-    const groq_api_key = process.env.GROQ_API_KEY;
+    let groq_api_key = (process.env.GROQ_API_KEY || '').trim();
+    if (!groq_api_key) {
+      try {
+        const envParsed = dotenv.config({ path: '/app/.env' }).parsed;
+        groq_api_key = (envParsed?.GROQ_API_KEY || '').trim();
+      } catch {}
+    }
+    groq_api_key = groq_api_key.replace(/^["']|["']$/g, '').trim();
+
     if (!groq_api_key) {
       console.error('[Pipeline] GROQ_API_KEY is missing. Cannot process question.');
       await prisma.stagedQuestion.update({
@@ -143,12 +157,16 @@ Strategy: ${parsedMeta.strategy}
 
 Generate:
 1. An optimal canonical solution in Python 3 that reads from sys.stdin and writes to sys.stdout.
-2. Exactly 10 valid test cases:
-   - 3 Sample Cases (easy, basic examples)
-   - 4 Edge / Boundary Cases (N=1, negative numbers, extreme values, duplicates)
-   - 3 Stress / Performance Cases (larger inputs within constraints to test efficiency)
+2. An array "testCases" with EXACTLY 10 valid test cases:
+   - Cases 1-3: Sample / basic inputs (e.g. N=3 to 5)
+   - Cases 4-7: Edge and boundary inputs (N=1, negative numbers, extreme values, duplicates)
+   - Cases 8-10: Moderate stress inputs (keep N around 15 to 30 elements, DO NOT print thousands of elements)
 
-CRITICAL: The 'input' and 'expectedOutput' MUST be raw strings with newline characters (\\n), exactly formatted for standard input stream readers.
+CRITICAL REQUIREMENTS:
+- The "testCases" array MUST contain EXACTLY 10 items. Do NOT generate only 3 sample cases.
+- Every test case MUST follow the problem's Input Format. NEVER leave "input" empty.
+- Keep all test inputs concise so they fit cleanly within output token limits without being truncated.
+- Both "input" and "expectedOutput" MUST be raw strings with newline characters (\\n).
 
 Output ONLY a JSON object matching this structure:
 {
@@ -166,27 +184,79 @@ Output ONLY a JSON object matching this structure:
     let synthAttempts = 0;
     const maxSynthAttempts = 2;
 
-    while (synthAttempts < maxSynthAttempts && (!solutionCode || testCases.length === 0)) {
+    while (synthAttempts < maxSynthAttempts && (!solutionCode || testCases.length < 10)) {
       synthAttempts++;
       console.log(`[Pipeline] Step 3 (Attempt ${synthAttempts}/${maxSynthAttempts}): Synthesizing solution & 10 test cases via Groq...`);
 
       const synthesisCompletion = await createChatCompletion(groq, {
         messages: [{ role: "user", content: synthesisPrompt }],
-        response_format: { type: "json_object" },
+        max_tokens: 3500,
         temperature: 0.1,
       });
 
       const synthData = parseJsonResponse(synthesisCompletion.choices[0].message.content || "{}");
       solutionCode = synthData.solutionCode || "";
-      testCases = Array.isArray(synthData.testCases) ? synthData.testCases : [];
+      const rawCases = Array.isArray(synthData.testCases) ? synthData.testCases : [];
+      testCases = rawCases
+        .map((tc: any) => ({
+          input: typeof tc.input === 'string' ? tc.input : String(tc.input ?? ''),
+          expectedOutput: typeof tc.expectedOutput === 'string' 
+            ? tc.expectedOutput 
+            : typeof tc.output === 'string' 
+              ? tc.output 
+              : String(tc.expectedOutput ?? tc.output ?? '')
+        }))
+        .filter((tc: any) => tc.input.trim().length > 0);
 
-      if (!solutionCode || testCases.length === 0) {
-        console.warn(`[Pipeline] Synthesis attempt ${synthAttempts} was missing solutionCode or testCases.`);
+      if (!solutionCode || testCases.length < 10) {
+        console.warn(`[Pipeline] Synthesis attempt ${synthAttempts} had ${testCases.length}/10 test cases.`);
+      }
+    }
+
+    // Secondary expansion if LLM provided fewer than 10 test cases
+    if (solutionCode && testCases.length > 0 && testCases.length < 10) {
+      console.log(`[Pipeline] Synthesizing ${10 - testCases.length} additional test cases to ensure full 10/10 suite...`);
+      try {
+        const morePrompt = `Problem: ${parsedMeta.title}
+${parsedMeta.description}
+Constraints: ${parsedMeta.constraints}
+Solution:
+${solutionCode}
+
+We currently have ${testCases.length} test cases. Generate EXACTLY ${10 - testCases.length} additional valid test cases (edge and stress cases).
+Input format must be strictly followed. Never generate empty inputs.
+Output ONLY JSON:
+{
+  "testCases": [
+    { "input": "...", "expectedOutput": "..." }
+  ]
+}`;
+        const moreCompletion = await createChatCompletion(groq, {
+          messages: [{ role: "user", content: morePrompt }],
+          response_format: { type: "json_object" },
+          temperature: 0.2,
+        });
+        const moreData = parseJsonResponse(moreCompletion.choices[0].message.content || "{}");
+        if (Array.isArray(moreData.testCases)) {
+          const additional = moreData.testCases
+            .map((tc: any) => ({
+              input: typeof tc.input === 'string' ? tc.input : String(tc.input ?? ''),
+              expectedOutput: typeof tc.expectedOutput === 'string' 
+                ? tc.expectedOutput 
+                : typeof tc.output === 'string' 
+                  ? tc.output 
+                  : String(tc.expectedOutput ?? tc.output ?? '')
+            }))
+            .filter((tc: any) => tc.input.trim().length > 0);
+          testCases = [...testCases, ...additional].slice(0, 10);
+        }
+      } catch (moreErr) {
+        console.warn('[Pipeline] Additional test case synthesis skipped:', moreErr);
       }
     }
 
     if (!solutionCode || testCases.length === 0) {
-      console.error(`[Pipeline] LLM failed to synthesize valid solution or test cases after ${maxSynthAttempts} attempts.`);
+      console.error(`[Pipeline] LLM failed to synthesize valid solution or test cases.`);
       await prisma.stagedQuestion.update({
         where: { id: stagedQuestionId },
         data: { status: 'FAILED_AI' }
@@ -210,7 +280,10 @@ Output ONLY a JSON object matching this structure:
           body: JSON.stringify({
             language: 'python',
             code: solutionCode,
-            testCases: testCases
+            testCases: testCases.map(tc => ({
+              input: tc.input,
+              expectedOutput: tc.expectedOutput
+            }))
           })
         });
 
@@ -286,8 +359,10 @@ Output ONLY JSON with the fixed "solutionCode" and "testCases" array.`;
         category: parsedMeta.category || 'DSA',
         subtopic: parsedMeta.subtopic || 'General',
         constraints: parsedMeta.constraints || '',
+        solutionCode: solutionCode,
+        solutionLang: 'python',
         testCases: testCases,
-        sandboxVerdict: validationPassed ? '10/10 Passed' : 'Validation Failed',
+        sandboxVerdict: validationPassed ? `${testCases.length}/${testCases.length} Passed` : 'Validation Failed',
         status: finalStatus
       }
     });

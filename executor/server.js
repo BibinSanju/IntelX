@@ -164,8 +164,9 @@ app.post('/validate', async (req, res) => {
 
         for (let i = 0; i < testCases.length; i++) {
             const tc = testCases[i];
-            const inputStr = typeof tc.input === 'string' ? tc.input : JSON.stringify(tc.input);
-            const expectedStr = (typeof tc.expectedOutput === 'string' ? tc.expectedOutput : JSON.stringify(tc.expectedOutput)).trim();
+            const inputStr = typeof tc.input === 'string' ? tc.input : JSON.stringify(tc.input ?? '');
+            const rawExpected = tc.expectedOutput ?? tc.output ?? '';
+            const expectedStr = (typeof rawExpected === 'string' ? rawExpected : JSON.stringify(rawExpected)).trim();
 
             const inputPath = path.join(runDir, `tc_${i}.in`);
             await fs.writeFile(inputPath, inputStr);

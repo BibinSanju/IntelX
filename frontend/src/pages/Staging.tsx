@@ -404,8 +404,8 @@ export default function Staging() {
                           <span>Case {idx + 1} {idx < 3 ? '(Sample)' : idx < 7 ? '(Edge)' : '(Stress)'}</span>
                         </div>
                         <div className="tc-io">
-                          <div className="mb-1"><strong>stdin:</strong> <pre className="bg-black p-1.5 rounded mt-0.5">{tc.input}</pre></div>
-                          <div><strong>stdout:</strong> <pre className="bg-black p-1.5 rounded mt-0.5">{tc.expectedOutput}</pre></div>
+                          <div className="mb-1"><strong>stdin:</strong> <pre className="bg-black p-1.5 rounded mt-0.5">{tc.input || '<em>(empty)</em>'}</pre></div>
+                          <div><strong>stdout:</strong> <pre className="bg-black p-1.5 rounded mt-0.5">{tc.expectedOutput ?? tc.output ?? ''}</pre></div>
                         </div>
                       </div>
                     ))
