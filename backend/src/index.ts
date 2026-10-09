@@ -24,7 +24,10 @@ console.log(`Server is running on port ${port}`)
 // Allow m1's frontend to talk to your backend
 app.use('/*', cors({
   origin: [
+    // Browsers treat these as distinct origins; local development uses
+    // localhost while the Playwright workflow uses 127.0.0.1.
     'http://localhost:5173',
+    'http://127.0.0.1:5173',
     'https://intelxf.vercel.app'
   ],
   allowHeaders: ['Content-Type', 'Authorization'],

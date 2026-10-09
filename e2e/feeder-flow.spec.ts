@@ -36,6 +36,19 @@ test.describe('End-to-End Question Curation, Sandbox & Moodle XML Pipeline', () 
     await page.goto(`${frontendUrl}/staging`);
     await expect(page).toHaveTitle(/frontend|IntelX/i);
 
+    // Fetch from the page context so this check exercises browser CORS.
+    // Surface an API/CORS regression directly instead of timing out on a missing card.
+    const stagingApiResult = await page.evaluate(async (url) => {
+      try {
+        const response = await fetch(url);
+        return { ok: response.ok, status: response.status };
+      } catch (error) {
+        return { ok: false, status: 0, error: String(error) };
+      }
+    }, `${apiUrl}/api/staged`);
+    expect(stagingApiResult).toMatchObject({ ok: true, status: 200 });
+    await expect(page.locator('.error-banner')).toHaveCount(0);
+
     const newQuestionCard = page.locator(`.staged-card[data-id="${questionId}"]`);
     await expect(newQuestionCard).toBeVisible({ timeout: 15000 });
     await expect(newQuestionCard).toContainText('STAGED');
