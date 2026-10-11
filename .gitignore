@@ -118,3 +118,7 @@ Thumbs.db
 
 # Temporary local clone for GitHub Actions
 scraper/leetcode-company-wise-problems/
+
+# Playwright artifacts
+test-results/
+playwright-report/

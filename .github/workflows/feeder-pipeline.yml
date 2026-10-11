@@ -31,10 +31,10 @@ jobs:
 
     steps:
       - name: 📥 Check out repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@v4
 
       - name: 🟢 Setup Node.js (v20)
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: 'npm'
@@ -83,15 +83,15 @@ jobs:
 
     steps:
       - name: 📥 Check out repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@v4
 
       - name: 🟢 Setup Node.js (v20)
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@v4
         with:
           node-version: 20
 
       - name: 🐍 Setup Python 3
-        uses: actions/setup-python@v7
+        uses: actions/setup-python@v5
         with:
           python-version: '3.12'
 
@@ -136,10 +136,10 @@ jobs:
 
     steps:
       - name: 📥 Check out repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@v4
 
       - name: 🔧 Setup Docker Buildx
-        uses: docker/setup-buildx-action@v4
+        uses: docker/setup-buildx-action@v3
 
       - name: 📋 Validate Docker Compose Orchestration Config
         run: |
@@ -147,7 +147,7 @@ jobs:
           docker compose config
 
       - name: 🔨 Build Executor Sandbox Image
-        uses: docker/build-push-action@v7
+        uses: docker/build-push-action@v5
         with:
           context: ./executor
           file: ./executor/Dockerfile
@@ -157,7 +157,7 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: 🔨 Build Backend Image
-        uses: docker/build-push-action@v7
+        uses: docker/build-push-action@v5
         with:
           context: ./backend
           file: ./backend/Dockerfile
@@ -167,7 +167,7 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: 🔨 Build Frontend Image
-        uses: docker/build-push-action@v7
+        uses: docker/build-push-action@v5
         with:
           context: ./frontend
           file: ./frontend/Dockerfile
@@ -190,6 +190,7 @@ jobs:
       DIRECT_URL: postgresql://admin:adminpassword@127.0.0.1:5432/placement_portal
       EXECUTOR_URL: http://127.0.0.1:8080
       VITE_API_BASE: http://127.0.0.1:3000
+      FRONTEND_URL: http://127.0.0.1:5173
       GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
 
     services:
@@ -209,15 +210,15 @@ jobs:
 
     steps:
       - name: 📥 Check out repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@v4
 
       - name: 🟢 Setup Node.js (v20)
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@v4
         with:
           node-version: 20
 
       - name: 🐍 Setup Python 3
-        uses: actions/setup-python@v7
+        uses: actions/setup-python@v5
         with:
           python-version: '3.12'
 
@@ -311,7 +312,7 @@ jobs:
 
       - name: 📁 Upload Playwright Test Artifacts
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v4
         with:
           name: playwright-e2e-report
           path: playwright-report/

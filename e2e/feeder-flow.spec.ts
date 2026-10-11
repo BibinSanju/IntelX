@@ -8,10 +8,11 @@ test.describe('End-to-End Question Curation, Sandbox & Moodle XML Pipeline', () 
     const frontendUrl = baseURL || 'http://localhost:5173';
 
     console.log('--- Step 1: Ingesting Raw Interview Question ---');
-    const rawQuestionText = "Given a 2D grid of 0s and 1s, find the shortest path from the top-left to bottom-right cell avoiding obstacles (1s). Return the minimum steps or -1 if unreachable.";
+    const runId = Date.now();
+    const rawQuestionText = `Interview Problem ${runId}: Given an array of integers representing stock prices on consecutive days, calculate the maximum profit you can achieve with at most two transactions. You cannot engage in multiple transactions simultaneously. Return the maximum profit as an integer.`;
 
     const ingestResponse = await request.post(`${apiUrl}/api/ingest`, {
-      data: { raw_text: rawQuestionText, source: "Playwright_E2E" }
+      data: { raw_text: rawQuestionText, source: `Playwright_E2E_${runId}` }
     });
 
     expect(ingestResponse.ok()).toBeTruthy();

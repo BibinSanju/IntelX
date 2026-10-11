@@ -1,7 +1,12 @@
 import { defineConfig, devices } from '@playwright/test';
 
-process.env.VITE_API_BASE = process.env.VITE_API_BASE || 'https://intelx-backend.onrender.com';
-process.env.FRONTEND_URL = process.env.FRONTEND_URL || 'https://intel-x-sage.vercel.app';
+if (process.env.CI) {
+  process.env.VITE_API_BASE = process.env.VITE_API_BASE || 'http://127.0.0.1:3000';
+  process.env.FRONTEND_URL = process.env.FRONTEND_URL || 'http://127.0.0.1:5173';
+} else {
+  process.env.VITE_API_BASE = process.env.VITE_API_BASE || 'https://intelx-backend.onrender.com';
+  process.env.FRONTEND_URL = process.env.FRONTEND_URL || 'https://intel-x-sage.vercel.app';
+}
 
 export default defineConfig({
   testDir: './e2e',
