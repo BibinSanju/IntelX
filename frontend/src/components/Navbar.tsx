@@ -21,10 +21,10 @@ export default function Navbar() {
         </Link>
         
         <div className="nav-links flex-center">
-          <Link to="/submit-prompt" className="nav-link">Submit Question</Link>
-          <Link to="/problems" className="nav-link">Problems</Link>
-          <Link to="/staging" className="nav-link">Staging</Link>
-          <Link to="/export" className="nav-link">Export</Link>
+          <Link to="/" className="nav-link">Question Feeder</Link>
+          <Link to="/staging" className="nav-link">Faculty Staging</Link>
+          <Link to="/export" className="nav-link">Moodle XML Export</Link>
+          <Link to="/problems" className="nav-link">Question Bank</Link>
           
           {isAuthenticated ? (
             <div className="auth-group flex-center">

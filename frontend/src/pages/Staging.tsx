@@ -5,8 +5,7 @@ import {
   Eye, CheckSquare, Square, X, RefreshCw, Layers, FileCode 
 } from 'lucide-react';
 import './Staging.css';
-
-const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:3000';
+import { API_BASE } from '../config';
 
 interface StagedQuestion {
   id: string;
@@ -177,7 +176,7 @@ export default function Staging() {
 
       {/* Filter Tabs */}
       <div className="staging-tabs flex gap-2">
-        {['ALL', 'STAGED', 'PENDING_AI', 'DUPLICATE_FOUND', 'FAILED_SANDBOX'].map(tab => (
+        {['ALL', 'STAGED', 'PENDING_AI', 'DUPLICATE_FOUND', 'FAILED_SANDBOX', 'FAILED_SECURITY'].map(tab => (
           <button
             key={tab}
             className={`tab-btn ${activeTab === tab ? 'active' : ''}`}

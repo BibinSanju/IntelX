@@ -22,9 +22,69 @@ function runCommand(command, options = {}) {
     });
 }
 
+// Security Inspection: Block dangerous modules, system calls, and fork bombs
+function checkMaliciousCode(language, code) {
+    if (!code || typeof code !== 'string') return null;
+
+    // Universal blocked patterns
+    const universalPatterns = [
+        /(?:fork\s*\(|forkbomb|:\(\)\s*\{\s*:\|:&\s*\};:)/i,
+        /(?:rm\s+-rf|\/dev\/urandom|\/dev\/zero)/i
+    ];
+    for (const pat of universalPatterns) {
+        if (pat.test(code)) return 'Malicious fork or destruction pattern detected';
+    }
+
+    if (language === 'python') {
+        const pyForbidden = [
+            /\bimport\s+(?:os|subprocess|shutil|socket|pty|commands|multiprocessing|threading|ctypes)\b/,
+            /\bfrom\s+(?:os|subprocess|shutil|socket|pty|commands|multiprocessing|threading|ctypes)\b/,
+            /\b(?:open\s*\(|file\s*\()/,
+            /\b(?:eval\s*\(|exec\s*\(|__import__)/,
+            /\bos\.(?:system|popen|spawn|kill|remove|unlink|rmdir)/,
+            /\bsys\.(?:exit|modules|setrecursionlimit\s*\(\s*9999999)/
+        ];
+        for (const pat of pyForbidden) {
+            if (pat.test(code)) return `Unauthorized system module or function detected in Python script`;
+        }
+    } else if (language === 'javascript') {
+        const jsForbidden = [
+            /\b(?:child_process|fs|cluster|worker_threads|net|http|https|dgram)\b/,
+            /\bprocess\.(?:exit|kill|abort|env)/,
+            /\beval\s*\(/
+        ];
+        for (const pat of jsForbidden) {
+            if (pat.test(code)) return `Unauthorized system module detected in JavaScript script`;
+        }
+    } else if (language === 'cpp' || language === 'c') {
+        const cppForbidden = [
+            /#\s*include\s*<sys\//,
+            /#\s*include\s*<unistd\.h>/,
+            /#\s*include\s*<windows\.h>/,
+            /\b(?:system|fork|exec|popen|kill)\s*\(/
+        ];
+        for (const pat of cppForbidden) {
+            if (pat.test(code)) return `Unauthorized system call detected in C/C++ script`;
+        }
+    } else if (language === 'java') {
+        const javaForbidden = [
+            /\b(?:Runtime\.getRuntime|ProcessBuilder|java\.io\.File|java\.net\.)/,
+            /\bSystem\.exit/
+        ];
+        for (const pat of javaForbidden) {
+            if (pat.test(code)) return `Unauthorized system class detected in Java script`;
+        }
+    }
+    return null;
+}
+
 // Single execution endpoint (backward compatibility)
 app.post('/execute', async (req, res) => {
     const { language, code, input } = req.body;
+    const secError = checkMaliciousCode(language, code);
+    if (secError) {
+        return res.status(403).json({ status: "error", output: `Security violation: ${secError}` });
+    }
     const runId = crypto.randomBytes(8).toString('hex');
     const runDir = path.join(__dirname, 'temp', runId);
     await fs.mkdir(runDir, { recursive: true });
@@ -87,6 +147,18 @@ app.post('/validate', async (req, res) => {
     }
     if (!Array.isArray(testCases) || testCases.length === 0) {
         return res.status(400).json({ allPassed: false, error: "Missing test cases" });
+    }
+
+    const secError = checkMaliciousCode(language, code);
+    if (secError) {
+        return res.status(403).json({
+            allPassed: false,
+            stage: 'security',
+            error: `Security violation: ${secError}`,
+            passedCount: 0,
+            totalCount: testCases.length,
+            results: []
+        });
     }
 
     const runId = crypto.randomBytes(8).toString('hex');

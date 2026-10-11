@@ -74,8 +74,6 @@ services:
         condition: service_healthy
     ports:
       - "5173:80"
-    volumes:
-      - ./frontend/dist:/usr/share/nginx/html:ro
 
 volumes:
   pgdata:

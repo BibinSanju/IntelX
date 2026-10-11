@@ -130,6 +130,7 @@ app.post('/api/staged/export-xml', async (c) => {
       category: q.category || 'DSA',
       subtopic: q.subtopic || 'General',
       difficulty: 'Medium',
+      solutionCode: q.solutionCode || undefined,
       testCases: (q.testCases as any[]) || []
     }))
 

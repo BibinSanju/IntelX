@@ -2,8 +2,7 @@ import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 import { Download, AlertCircle, CheckSquare, Square, ChevronDown, ChevronRight } from 'lucide-react';
 import './Export.css';
-
-const API_BASE = import.meta.env.VITE_API_BASE || 'https://intelx-148e.onrender.com';
+import { API_BASE } from '../config';
 
 interface Question {
   id: string;

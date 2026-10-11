@@ -22,35 +22,17 @@ function App() {
         <Navbar />
         <main>
           <Routes>
-            <Route 
-              path="/" 
-              element={isAuthenticated ? <Navigate to="/dashboard" replace /> : <Navigate to="/login" replace />} 
-            />
-            <Route 
-              path="/login" 
-              element={isAuthenticated ? <Navigate to="/dashboard" replace /> : <Login />} 
-            />
-            <Route 
-              path="/signup" 
-              element={isAuthenticated ? <Navigate to="/dashboard" replace /> : <Signup />} 
-            />
-            <Route 
-              path="/dashboard" 
-              element={isAuthenticated ? <Dashboard /> : <Navigate to="/login" replace />} 
-            />
-            <Route 
-              path="/category/:name" 
-              element={isAuthenticated ? <CategoryView /> : <Navigate to="/login" replace />} 
-            />
+            <Route path="/" element={<SubmitPrompt />} />
             <Route path="/submit-prompt" element={<SubmitPrompt />} />
+            <Route path="/staging" element={<Staging />} />
+            <Route path="/export" element={<Export />} />
             <Route path="/problems" element={<ProblemsList />} />
             <Route path="/problems/:id" element={<ProblemDetails />} />
-            <Route path="/export" element={<Export />} />
-            <Route path="/staging" element={<Staging />} />
-            <Route 
-              path="/profile" 
-              element={isAuthenticated ? <Profile /> : <Navigate to="/login" replace />} 
-            />
+            <Route path="/login" element={<Login />} />
+            <Route path="/signup" element={<Signup />} />
+            <Route path="/dashboard" element={<Dashboard />} />
+            <Route path="/category/:name" element={<CategoryView />} />
+            <Route path="/profile" element={<Profile />} />
           </Routes>
         </main>
       </div>

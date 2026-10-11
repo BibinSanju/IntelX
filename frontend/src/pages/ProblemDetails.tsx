@@ -3,8 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { ArrowLeft, AlertCircle, FileCode } from 'lucide-react';
 import './ProblemDetails.css';
-
-const API_BASE = import.meta.env.VITE_API_BASE || 'https://intelx-148e.onrender.com';
+import { API_BASE } from '../config';
 
 interface Question {
   id: string;
