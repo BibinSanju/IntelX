@@ -18,6 +18,6 @@
   },
   "homepage": "https://github.com/BibinSanju/IntelX#readme",
   "devDependencies": {
-    "@playwright/test": "^1.63.0"
+    "@playwright/test": "^1.64.0"
   }
 }

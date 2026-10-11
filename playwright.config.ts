@@ -1,5 +1,8 @@
 import { defineConfig, devices } from '@playwright/test';
 
+process.env.VITE_API_BASE = process.env.VITE_API_BASE || 'https://intelx-backend.onrender.com';
+process.env.FRONTEND_URL = process.env.FRONTEND_URL || 'https://intel-x-sage.vercel.app';
+
 export default defineConfig({
   testDir: './e2e',
   timeout: 180000,

@@ -4,8 +4,7 @@ import axios from 'axios';
 import { useAuthStore } from '../store/useAuthStore';
 import { Mail, Lock, User, AlertCircle } from 'lucide-react';
 import './Auth.css';
-
-const API_BASE = import.meta.env.VITE_API_BASE || 'https://intelx-148e.onrender.com';
+import { API_BASE } from '../config';
 
 export default function Signup() {
   const [username, setUsername] = useState('');

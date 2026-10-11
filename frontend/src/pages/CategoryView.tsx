@@ -3,8 +3,7 @@ import { useParams, Link, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { ChevronRight, Circle, CheckCircle2, AlertCircle, ArrowLeft } from 'lucide-react';
 import './CategoryView.css';
-
-const API_BASE = import.meta.env.VITE_API_BASE || 'https://intelx-148e.onrender.com';
+import { API_BASE } from '../config';
 
 // Removed hardcoded categorySubtopics
 

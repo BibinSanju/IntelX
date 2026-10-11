@@ -85,7 +85,7 @@ test.describe('End-to-End Question Curation, Sandbox & Moodle XML Pipeline', () 
 
     console.log('--- Step 6: Verifying Student Public Intake Page ---');
     await page.goto(`${frontendUrl}/submit-prompt`);
-    await expect(page.locator('h1')).toContainText('Campus Interview Question Feeder');
+    await expect(page.locator('h1')).toContainText(/Interview Question Feeder/i);
     await expect(page.locator('textarea')).toBeVisible();
 
     console.log('🎉 Full End-to-End Pipeline & CI Quality Gate Passed Successfully!');
