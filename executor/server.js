@@ -99,26 +99,26 @@ app.post('/execute', async (req, res) => {
         if (language === 'javascript') {
             filePath = path.join(runDir, 'script.js');
             await fs.writeFile(filePath, code);
-            command = `node ${filePath} < ${inputPath}`;
+            command = `node "${filePath}" < "${inputPath}"`;
         } else if (language === 'python') {
             filePath = path.join(runDir, 'solution.py');
             await fs.writeFile(filePath, code);
-            command = `python3 ${filePath} < ${inputPath}`;
+            command = `python3 "${filePath}" < "${inputPath}"`;
         } else if (language === 'c') {
             filePath = path.join(runDir, 'code.c');
             const outPath = path.join(runDir, 'code.out');
             await fs.writeFile(filePath, code);
-            command = `gcc ${filePath} -O2 -o ${outPath} && ${outPath} < ${inputPath}`;
+            command = `gcc "${filePath}" -O2 -o "${outPath}" && "${outPath}" < "${inputPath}"`;
         } else if (language === 'cpp') {
             filePath = path.join(runDir, 'solution.cpp');
             const outPath = path.join(runDir, 'solution.out');
             await fs.writeFile(filePath, code);
-            command = `g++ ${filePath} -O3 -std=c++20 -o ${outPath} && ${outPath} < ${inputPath}`;
+            command = `g++ "${filePath}" -O3 -std=c++20 -o "${outPath}" && "${outPath}" < "${inputPath}"`;
         } else if (language === 'java') {
             filePath = path.join(runDir, 'Main.java');
             const javaCode = code.replace(/public\s+class\s+\w+/g, 'public class Main');
             await fs.writeFile(filePath, javaCode);
-            command = `javac ${filePath} && java -cp ${runDir} Main < ${inputPath}`;
+            command = `javac "${filePath}" && java -cp "${runDir}" Main < "${inputPath}"`;
         } else {
             return res.status(400).json({ error: "Unsupported language" });
         }
@@ -175,7 +175,7 @@ app.post('/validate', async (req, res) => {
             await fs.writeFile(pyFile, code);
             
             // Syntax pre-check
-            const syntaxCheck = await runCommand(`python3 -m py_compile ${pyFile}`);
+            const syntaxCheck = await runCommand(`python3 -m py_compile "${pyFile}"`);
             if (!syntaxCheck.success) {
                 return res.json({
                     allPassed: false,
@@ -186,13 +186,13 @@ app.post('/validate', async (req, res) => {
                     results: []
                 });
             }
-            runExecutable = `python3 ${pyFile}`;
+            runExecutable = `python3 "${pyFile}"`;
         } else if (language === 'cpp') {
             const cppFile = path.join(runDir, 'solution.cpp');
             const binFile = path.join(runDir, 'solution.out');
             await fs.writeFile(cppFile, code);
 
-            const compileRes = await runCommand(`g++ ${cppFile} -O3 -std=c++20 -o ${binFile}`);
+            const compileRes = await runCommand(`g++ "${cppFile}" -O3 -std=c++20 -o "${binFile}"`);
             if (!compileRes.success) {
                 return res.json({
                     allPassed: false,
@@ -203,13 +203,13 @@ app.post('/validate', async (req, res) => {
                     results: []
                 });
             }
-            runExecutable = binFile;
+            runExecutable = `"${binFile}"`;
         } else if (language === 'java') {
             const javaFile = path.join(runDir, 'Main.java');
             const sanitizedCode = code.replace(/public\s+class\s+\w+/g, 'public class Main');
             await fs.writeFile(javaFile, sanitizedCode);
 
-            const compileRes = await runCommand(`javac ${javaFile}`);
+            const compileRes = await runCommand(`javac "${javaFile}"`);
             if (!compileRes.success) {
                 return res.json({
                     allPassed: false,
@@ -220,11 +220,11 @@ app.post('/validate', async (req, res) => {
                     results: []
                 });
             }
-            runExecutable = `java -cp ${runDir} Main`;
+            runExecutable = `java -cp "${runDir}" Main`;
         } else if (language === 'javascript') {
             const jsFile = path.join(runDir, 'script.js');
             await fs.writeFile(jsFile, code);
-            runExecutable = `node ${jsFile}`;
+            runExecutable = `node "${jsFile}"`;
         } else {
             return res.status(400).json({ allPassed: false, error: `Unsupported language: ${language}` });
         }
@@ -236,15 +236,18 @@ app.post('/validate', async (req, res) => {
 
         for (let i = 0; i < testCases.length; i++) {
             const tc = testCases[i];
-            const inputStr = typeof tc.input === 'string' ? tc.input : JSON.stringify(tc.input ?? '');
+            let inputStr = typeof tc.input === 'string' ? tc.input : JSON.stringify(tc.input ?? '');
+            inputStr = inputStr.replace(/\\r\\n/g, '\n').replace(/\\n/g, '\n').replace(/\\t/g, '\t');
+
             const rawExpected = tc.expectedOutput ?? tc.output ?? '';
-            const expectedStr = (typeof rawExpected === 'string' ? rawExpected : JSON.stringify(rawExpected)).trim();
+            let expectedStr = (typeof rawExpected === 'string' ? rawExpected : JSON.stringify(rawExpected)).trim();
+            expectedStr = expectedStr.replace(/\\r\\n/g, '\n').replace(/\\n/g, '\n').replace(/\\t/g, '\t');
 
             const inputPath = path.join(runDir, `tc_${i}.in`);
             await fs.writeFile(inputPath, inputStr);
 
             const caseStartTime = Date.now();
-            const execRes = await runCommand(`${runExecutable} < ${inputPath}`);
+            const execRes = await runCommand(`${runExecutable} < "${inputPath}"`);
             const caseDurationMs = Date.now() - caseStartTime;
 
             if (execRes.timedOut) {

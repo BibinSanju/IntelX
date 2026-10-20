@@ -1,12 +1,14 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import axios from 'axios';
 import { 
   AlertCircle, CheckCircle, Clock, Plus, Download, Trash2, 
-  Eye, CheckSquare, Square, X, RefreshCw, Layers, FileCode 
+  Eye, CheckSquare, Square, X, RefreshCw, Layers, FileCode,
+  Mic, UploadCloud, Loader2, Sparkles 
 } from 'lucide-react';
 import './Staging.css';
 import { API_BASE } from '../config';
+import { useAudioRecorder } from '../hooks/useAudioRecorder';
 
 interface StagedQuestion {
   id: string;
@@ -37,6 +39,20 @@ export default function Staging() {
   const [rawText, setRawText] = useState('');
   const [source, setSource] = useState('Student Interview');
   const [isIngesting, setIsIngesting] = useState(false);
+  const [sttFeedback, setSttFeedback] = useState<string | null>(null);
+  const audioFileInputRef = useRef<HTMLInputElement>(null);
+
+  // Audio Recorder Hook for Faculty Ingest Modal
+  const {
+    isRecording,
+    isTranscribing,
+    formattedDuration,
+    error: audioError,
+    startRecording,
+    stopRecording,
+    cancelRecording,
+    transcribeFile,
+  } = useAudioRecorder();
 
   // Inspector Modal state
   const [inspectingQuestion, setInspectingQuestion] = useState<StagedQuestion | null>(null);
@@ -172,6 +188,31 @@ export default function Staging() {
       alert('Failed to ingest question');
     } finally {
       setIsIngesting(false);
+    }
+  };
+
+  const handleStopRecording = async () => {
+    const text = await stopRecording();
+    if (text) {
+      setRawText(prev => prev.trim() ? `${prev}\n\n${text}` : text);
+      setSource('Audio Transcription');
+      setSttFeedback('Transcribed via Groq Whisper!');
+      setTimeout(() => setSttFeedback(null), 4000);
+    }
+  };
+
+  const handleAudioFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const text = await transcribeFile(file);
+    if (text) {
+      setRawText(prev => prev.trim() ? `${prev}\n\n${text}` : text);
+      setSource('Audio Transcription');
+      setSttFeedback(`Transcribed "${file.name}" via Groq Whisper!`);
+      setTimeout(() => setSttFeedback(null), 4000);
+    }
+    if (audioFileInputRef.current) {
+      audioFileInputRef.current.value = '';
     }
   };
 
@@ -360,11 +401,90 @@ export default function Staging() {
               </div>
 
               <div style={{ marginBottom: '20px' }}>
-                <label className="block text-sm font-semibold mb-2" style={{ display: 'block', fontSize: '0.85rem', fontWeight: 700, marginBottom: '6px', color: '#334155' }}>Raw Question Statement</label>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px', flexWrap: 'wrap', gap: '8px' }}>
+                  <label className="block text-sm font-semibold" style={{ fontSize: '0.85rem', fontWeight: 700, color: '#334155' }}>
+                    Raw Question Statement
+                  </label>
+
+                  <div className="feeder-stt-toolbar">
+                    <input 
+                      type="file" 
+                      ref={audioFileInputRef} 
+                      accept="audio/*,.mp3,.wav,.m4a,.webm,.ogg" 
+                      style={{ display: 'none' }} 
+                      onChange={handleAudioFileUpload} 
+                    />
+
+                    {isRecording ? (
+                      <div className="stt-active-recording">
+                        <span className="stt-pulsing-circle" />
+                        <span className="stt-timer-text">Listening... {formattedDuration}</span>
+                        <button 
+                          type="button" 
+                          className="stt-chip-btn stop" 
+                          onClick={handleStopRecording}
+                          title="Finish speech and transcribe"
+                        >
+                          <Square size={12} fill="currentColor" />
+                          <span>Done</span>
+                        </button>
+                        <button 
+                          type="button" 
+                          className="stt-chip-btn cancel" 
+                          onClick={cancelRecording}
+                          title="Cancel recording"
+                        >
+                          <X size={13} />
+                        </button>
+                      </div>
+                    ) : isTranscribing ? (
+                      <div className="stt-transcribing-badge">
+                        <Loader2 size={13} className="spin-fast text-brand" />
+                        <span>Transcribing...</span>
+                      </div>
+                    ) : (
+                      <div className="stt-idle-actions">
+                        <button 
+                          type="button" 
+                          className="stt-action-chip voice"
+                          onClick={startRecording}
+                          title="Record speech with microphone"
+                        >
+                          <Mic size={13} />
+                          <span>Dictate</span>
+                        </button>
+                        <button 
+                          type="button" 
+                          className="stt-action-chip upload"
+                          onClick={() => audioFileInputRef.current?.click()}
+                          title="Upload audio file (.mp3, .m4a, .wav)"
+                        >
+                          <UploadCloud size={13} />
+                          <span>Audio File</span>
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {sttFeedback && (
+                  <div className="stt-feedback-banner animate-fade-in" style={{ marginBottom: '10px' }}>
+                    <Sparkles size={14} className="text-brand" />
+                    <span>{sttFeedback}</span>
+                  </div>
+                )}
+
+                {audioError && (
+                  <div className="stt-error-banner animate-fade-in" style={{ marginBottom: '10px' }}>
+                    <AlertCircle size={14} />
+                    <span>{audioError}</span>
+                  </div>
+                )}
+
                 <textarea 
                   className="input-field textarea-field" 
                   rows={6}
-                  placeholder="Paste unformatted question text, memory from an Amazon/Google interview, or rough notes..."
+                  placeholder="Paste unformatted question text, or click 'Dictate' to speak. Groq Whisper will transcribe speech into text..."
                   value={rawText}
                   onChange={(e) => setRawText(e.target.value)}
                   required

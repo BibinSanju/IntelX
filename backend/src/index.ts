@@ -9,6 +9,7 @@ import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
 import { processQuestionInBackground } from './aiProcessor.js'
 import { buildMoodleCodeRunnerXml } from './moodleXmlBuilder.js'
+import { transcribeAudio } from './transcribe.js'
 
 // Prisma 7 explicit connection adapter
 const pool = new Pool({
@@ -75,6 +76,51 @@ app.post('/api/ingest', async (c) => {
   } catch (error) {
     console.error('Ingestion error:', error)
     return c.json({ success: false, error: 'Failed to ingest question' }, 500)
+  }
+})
+
+// Speech-to-Text (STT) Transcription API using Groq Whisper Large v3 Turbo
+app.post('/api/transcribe', async (c) => {
+  try {
+    const body = await c.req.parseBody()
+    const audioFile = (body['file'] || body['audio']) as unknown as File
+
+    if (!audioFile) {
+      return c.json({ 
+        success: false, 
+        error: 'No audio file provided. Please record speech or upload an audio file.' 
+      }, 400)
+    }
+
+    // Size limit check (25 MB max)
+    const MAX_SIZE = 25 * 1024 * 1024
+    if (audioFile.size && audioFile.size > MAX_SIZE) {
+      return c.json({ 
+        success: false, 
+        error: 'Audio file exceeds 25 MB size limit.' 
+      }, 400)
+    }
+
+    const arrayBuffer = await audioFile.arrayBuffer()
+    const buffer = Buffer.from(arrayBuffer)
+    const fileName = audioFile.name || 'recording.webm'
+    const mimeType = audioFile.type || 'audio/webm'
+
+    console.log(`[STT Endpoint] Processing audio upload: ${fileName} (${mimeType}, ${buffer.length} bytes)`)
+    const result = await transcribeAudio(buffer, fileName, mimeType)
+
+    return c.json({
+      success: true,
+      text: result.text,
+      model: result.model,
+      duration: result.duration,
+    })
+  } catch (error: any) {
+    console.error('Transcription error:', error)
+    return c.json({ 
+      success: false, 
+      error: error.message || 'Failed to transcribe audio' 
+    }, 500)
   }
 })
 

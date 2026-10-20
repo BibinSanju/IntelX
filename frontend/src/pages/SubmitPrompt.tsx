@@ -1,11 +1,13 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { 
   Send, CheckCircle2, AlertCircle, Building2, User, FileText, 
-  RefreshCw, Cpu, ArrowRight, Sparkles, Check
+  RefreshCw, Cpu, ArrowRight, Sparkles, Check, Mic, Square, 
+  UploadCloud, X, Loader2
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { API_BASE } from '../config';
+import { useAudioRecorder } from '../hooks/useAudioRecorder';
 import './SubmitPrompt.css';
 
 const QUICK_COMPANIES = ['Google', 'Amazon', 'Microsoft', 'Zoho', 'TCS', 'Infosys'];
@@ -30,6 +32,20 @@ export default function SubmitPrompt() {
   const [activeQuestionId, setActiveQuestionId] = useState<string | null>(null);
   const [pipelineData, setPipelineData] = useState<PipelineQuestionData | null>(null);
   const [error, setError] = useState('');
+  const [sttFeedback, setSttFeedback] = useState<string | null>(null);
+  const audioFileInputRef = useRef<HTMLInputElement>(null);
+
+  // Audio Recorder Hook for high-speed Groq Whisper STT
+  const {
+    isRecording,
+    isTranscribing,
+    formattedDuration,
+    error: audioError,
+    startRecording,
+    stopRecording,
+    cancelRecording,
+    transcribeFile,
+  } = useAudioRecorder();
 
   // Poll for pipeline progress if activeQuestionId is set
   useEffect(() => {
@@ -88,11 +104,36 @@ export default function SubmitPrompt() {
   };
 
   const handleReset = () => {
+    cancelRecording();
     setActiveQuestionId(null);
     setPipelineData(null);
     setRawText('');
     setCompany('');
     setRole('');
+    setSttFeedback(null);
+  };
+
+  const handleStopRecording = async () => {
+    const text = await stopRecording();
+    if (text) {
+      setRawText(prev => prev.trim() ? `${prev}\n\n${text}` : text);
+      setSttFeedback('Speech transcribed successfully via Groq Whisper!');
+      setTimeout(() => setSttFeedback(null), 4000);
+    }
+  };
+
+  const handleAudioFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const text = await transcribeFile(file);
+    if (text) {
+      setRawText(prev => prev.trim() ? `${prev}\n\n${text}` : text);
+      setSttFeedback(`Audio file "${file.name}" transcribed successfully!`);
+      setTimeout(() => setSttFeedback(null), 4000);
+    }
+    if (audioFileInputRef.current) {
+      audioFileInputRef.current.value = '';
+    }
   };
 
   const currentStatus = pipelineData?.status || (activeQuestionId ? 'PENDING_AI' : 'IDLE');
@@ -193,15 +234,95 @@ export default function SubmitPrompt() {
                 </div>
               </div>
 
-              {/* Problem Description Area */}
+              {/* Problem Description Area with STT Dictation */}
               <div className="feeder-input-group">
-                <label className="feeder-clean-label">
-                  <FileText size={15} /> Problem Statement &amp; Notes
-                </label>
+                <div className="feeder-label-bar flex-between">
+                  <label className="feeder-clean-label">
+                    <FileText size={15} /> Problem Statement &amp; Notes
+                  </label>
+
+                  {/* STT Dictation & Voice Toolbar */}
+                  <div className="feeder-stt-toolbar">
+                    <input 
+                      type="file" 
+                      ref={audioFileInputRef} 
+                      accept="audio/*,.mp3,.wav,.m4a,.webm,.ogg" 
+                      style={{ display: 'none' }} 
+                      onChange={handleAudioFileUpload} 
+                    />
+
+                    {isRecording ? (
+                      <div className="stt-active-recording">
+                        <span className="stt-pulsing-circle" />
+                        <span className="stt-timer-text">Listening... {formattedDuration}</span>
+                        <button 
+                          type="button" 
+                          className="stt-chip-btn stop" 
+                          onClick={handleStopRecording}
+                          title="Finish speech and transcribe"
+                        >
+                          <Square size={12} fill="currentColor" />
+                          <span>Done</span>
+                        </button>
+                        <button 
+                          type="button" 
+                          className="stt-chip-btn cancel" 
+                          onClick={cancelRecording}
+                          title="Cancel recording"
+                        >
+                          <X size={13} />
+                        </button>
+                      </div>
+                    ) : isTranscribing ? (
+                      <div className="stt-transcribing-badge">
+                        <Loader2 size={13} className="spin-fast text-brand" />
+                        <span>Transcribing audio...</span>
+                      </div>
+                    ) : (
+                      <div className="stt-idle-actions">
+                        <button 
+                          type="button" 
+                          className="stt-action-chip voice"
+                          onClick={startRecording}
+                          title="Record your voice to dictate question"
+                        >
+                          <Mic size={14} />
+                          <span>Dictate (Voice STT)</span>
+                        </button>
+                        <button 
+                          type="button" 
+                          className="stt-action-chip upload"
+                          onClick={() => audioFileInputRef.current?.click()}
+                          title="Upload an audio file (.mp3, .m4a, .wav, .webm)"
+                        >
+                          <UploadCloud size={14} />
+                          <span>Upload Voice Note</span>
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* STT Feedback Banner */}
+                {sttFeedback && (
+                  <div className="stt-feedback-banner animate-fade-in">
+                    <Sparkles size={14} className="text-brand" />
+                    <span>{sttFeedback}</span>
+                  </div>
+                )}
+
+                {/* Audio Error Alert */}
+                {audioError && (
+                  <div className="stt-error-banner animate-fade-in">
+                    <AlertCircle size={14} />
+                    <span>{audioError}</span>
+                  </div>
+                )}
+
                 <textarea 
                   className="feeder-textarea-input" 
                   rows={7}
-                  placeholder="Paste or describe the question as best as you remember. Include sample inputs, expected outputs, or constraints if known..."
+                  placeholder="Paste, type, or click 'Dictate' to speak the question. Groq Whisper will transcribe your voice into problem text..."
                   value={rawText}
                   onChange={(e) => setRawText(e.target.value)}
                   required
