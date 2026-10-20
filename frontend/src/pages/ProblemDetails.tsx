@@ -71,43 +71,43 @@ export default function ProblemDetails() {
         </button>
       </div>
 
-      <div className="glass-panel p-6 problem-details-card">
+      <div className="card-light problem-details-card">
         <div className="problem-details-header">
-          <h1 className="problem-title text-gradient">{question.title}</h1>
+          <h1 className="problem-title">{question.title}</h1>
           <div className="problem-meta-badges flex gap-2 mt-3">
-            <span className={`difficulty-tag ${question.difficulty?.toLowerCase() || 'medium'}`}>
+            <span className={`siet-diff-pill ${question.difficulty?.toLowerCase() || 'medium'}`}>
               {question.difficulty || 'Medium'}
             </span>
-            <span className="category-tag">{question.category}</span>
-            {question.subtopic && <span className="category-tag">{question.subtopic}</span>}
+            <span className="siet-category-pill">{question.category}</span>
+            {question.subtopic && <span className="badge-slate">{question.subtopic}</span>}
           </div>
         </div>
 
         <hr className="divider my-6" />
 
-        <div className="problem-description prose prose-invert">
+        <div className="problem-description">
           <div dangerouslySetInnerHTML={{ __html: question.description }} />
         </div>
 
         {question.testCases && Array.isArray(question.testCases) && question.testCases.length > 0 && (
           <div className="problem-testcases-section mt-8">
-            <h2 className="testcases-title flex-center">
-              <FileCode size={20} />
-              <span>Test Cases ({question.testCases.length})</span>
+            <h2 className="testcases-title">
+              <FileCode size={20} color="#00864B" />
+              <span>Standardized Test Cases ({question.testCases.length})</span>
             </h2>
             <div className="testcases-grid">
               {question.testCases.map((tc: any, index: number) => (
-                <div key={index} className="example-box glass-panel p-4 rounded-md mb-3">
-                  <div className="text-sm font-semibold text-muted mb-2">Case {index + 1}</div>
+                <div key={index} className="example-box">
+                  <div className="text-sm font-semibold mb-2" style={{ color: '#00864B' }}>Test Case {index + 1}</div>
                   <div className="mb-2">
-                    <strong className="text-xs text-muted block mb-1">Standard Input (stdin):</strong>
-                    <pre className="p-3 bg-black bg-opacity-40 rounded text-xs whitespace-pre-wrap">
+                    <strong className="text-xs block mb-1" style={{ color: '#64748b' }}>Standard Input (stdin):</strong>
+                    <pre className="tc-code-block">
                       {typeof tc.input === 'string' ? tc.input : JSON.stringify(tc.input, null, 2)}
                     </pre>
                   </div>
                   <div>
-                    <strong className="text-xs text-muted block mb-1">Expected Output (stdout):</strong>
-                    <pre className="p-3 bg-black bg-opacity-40 rounded text-xs whitespace-pre-wrap">
+                    <strong className="text-xs block mb-1" style={{ color: '#64748b' }}>Expected Output (stdout):</strong>
+                    <pre className="tc-code-block">
                       {typeof tc.expectedOutput === 'string' ? tc.expectedOutput : JSON.stringify(tc.expectedOutput, null, 2)}
                     </pre>
                   </div>

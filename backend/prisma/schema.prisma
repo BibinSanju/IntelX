@@ -41,6 +41,7 @@ model User {
   email       String?      @unique  // Added for native auth
   password    String?      // Added for native auth
   username    String
+  role        String       @default("STUDENT") // "STUDENT" or "FACULTY"
   createdAt   DateTime     @default(now())
   
   // Profile Stats

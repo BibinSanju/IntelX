@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import axios from 'axios';
 import { 
   AlertCircle, CheckCircle, Clock, Plus, Download, Trash2, 
@@ -39,6 +40,27 @@ export default function Staging() {
 
   // Inspector Modal state
   const [inspectingQuestion, setInspectingQuestion] = useState<StagedQuestion | null>(null);
+
+  // Prevent background scrolling and enable Escape key dismiss when any modal is open
+  useEffect(() => {
+    if (inspectingQuestion || isIngestModalOpen) {
+      const originalOverflow = document.body.style.overflow;
+      document.body.style.overflow = 'hidden';
+
+      const handleKeyDown = (e: KeyboardEvent) => {
+        if (e.key === 'Escape') {
+          setInspectingQuestion(null);
+          setIsIngestModalOpen(false);
+        }
+      };
+      window.addEventListener('keydown', handleKeyDown);
+
+      return () => {
+        document.body.style.overflow = originalOverflow;
+        window.removeEventListener('keydown', handleKeyDown);
+      };
+    }
+  }, [inspectingQuestion, isIngestModalOpen]);
 
   const fetchStaged = async () => {
     try {
@@ -162,49 +184,51 @@ export default function Staging() {
           <p className="page-subtitle">Review AI-curated questions, verify 10 test cases, and package to Moodle LMS XML.</p>
         </div>
 
-        <div className="header-actions flex gap-3">
-          <button className="btn-secondary flex-center" onClick={fetchStaged}>
-            <RefreshCw size={16} style={{ marginRight: '6px' }} />
-            Refresh
+        <div className="header-actions">
+          <button className="staging-action-btn secondary" onClick={fetchStaged}>
+            <RefreshCw size={15} />
+            <span>Refresh</span>
           </button>
-          <button className="btn-primary flex-center" onClick={() => setIsIngestModalOpen(true)}>
-            <Plus size={16} style={{ marginRight: '6px' }} />
-            Ingest Raw Prompt
+          <button className="staging-action-btn primary" onClick={() => setIsIngestModalOpen(true)}>
+            <Plus size={16} />
+            <span>Ingest Raw Prompt</span>
           </button>
         </div>
       </div>
 
       {/* Filter Tabs */}
-      <div className="staging-tabs flex gap-2">
-        {['ALL', 'STAGED', 'PENDING_AI', 'DUPLICATE_FOUND', 'FAILED_SANDBOX', 'FAILED_SECURITY'].map(tab => (
-          <button
-            key={tab}
-            className={`tab-btn ${activeTab === tab ? 'active' : ''}`}
-            onClick={() => setActiveTab(tab)}
-          >
-            {tab.replace('_', ' ')}
-          </button>
-        ))}
+      <div className="staging-tabs-wrapper">
+        <div className="staging-tabs">
+          {['ALL', 'STAGED', 'PENDING_AI', 'DUPLICATE_FOUND', 'FAILED_SANDBOX', 'FAILED_SECURITY'].map(tab => (
+            <button
+              key={tab}
+              className={`tab-btn ${activeTab === tab ? 'active' : ''}`}
+              onClick={() => setActiveTab(tab)}
+            >
+              {tab.replace('_', ' ')}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Bulk Action Bar */}
       {selectedIds.size > 0 && (
-        <div className="bulk-action-bar glass-panel flex-between animate-fade-in">
-          <div className="selected-count flex-center">
+        <div className="bulk-action-bar animate-fade-in">
+          <div className="selected-count">
             <span className="font-semibold">{selectedIds.size} questions selected</span>
           </div>
-          <div className="bulk-buttons flex gap-2">
-            <button className="btn-secondary btn-sm flex-center" onClick={() => handleExportXml()}>
-              <Download size={14} style={{ marginRight: '6px' }} />
-              Export Selected to Moodle XML
+          <div className="bulk-buttons">
+            <button className="staging-action-btn secondary" onClick={() => handleExportXml()}>
+              <Download size={15} />
+              <span>Export Selected to XML</span>
             </button>
-            <button className="btn-approve btn-sm flex-center" onClick={handleBulkApprove}>
-              <CheckCircle size={14} style={{ marginRight: '6px' }} />
-              Approve Selected
+            <button className="staging-action-btn danger" onClick={handleBulkDiscard}>
+              <Trash2 size={15} />
+              <span>Discard Selected</span>
             </button>
-            <button className="btn-delete btn-sm flex-center" onClick={handleBulkDiscard}>
-              <Trash2 size={14} style={{ marginRight: '6px' }} />
-              Discard Selected
+            <button className="staging-action-btn primary" onClick={handleBulkApprove}>
+              <CheckCircle size={15} />
+              <span>Approve Selected</span>
             </button>
           </div>
         </div>
@@ -269,35 +293,38 @@ export default function Staging() {
 
                 <p className="raw-snippet">{q.rawText}</p>
 
-                <div className="staged-actions flex-between mt-4">
-                  <button 
-                    className="btn-secondary btn-sm flex-center"
-                    onClick={() => setInspectingQuestion(q)}
-                  >
-                    <Eye size={14} style={{ marginRight: '6px' }} />
-                    Inspect Testcases &amp; Diff
-                  </button>
-
-                  <div className="flex gap-2">
+                <div className="staged-actions">
+                  <div className="staged-left-actions">
                     <button 
-                      className="btn-secondary btn-sm flex-center"
+                      className="staging-action-btn secondary"
+                      onClick={() => setInspectingQuestion(q)}
+                    >
+                      <Eye size={15} />
+                      <span>Inspect &amp; Diff</span>
+                    </button>
+                    <button 
+                      className="staging-action-btn secondary"
                       onClick={() => handleExportXml([q.id])}
                     >
-                      <Download size={14} style={{ marginRight: '6px' }} />
-                      Moodle XML
+                      <Download size={15} />
+                      <span>Moodle XML</span>
                     </button>
+                  </div>
+
+                  <div className="staged-right-actions">
                     <button 
-                      className="btn-approve btn-sm flex-center" 
-                      onClick={() => handleApprove(q.id)}
-                    >
-                      <CheckCircle size={14} style={{ marginRight: '6px' }} />
-                      Approve to Live
-                    </button>
-                    <button 
-                      className="btn-delete btn-sm" 
+                      className="staging-action-btn danger" 
                       onClick={() => handleDiscard(q.id)}
                     >
-                      Discard
+                      <Trash2 size={15} />
+                      <span>Discard</span>
+                    </button>
+                    <button 
+                      className="staging-action-btn primary" 
+                      onClick={() => handleApprove(q.id)}
+                    >
+                      <CheckCircle size={15} />
+                      <span>Approve to Live</span>
                     </button>
                   </div>
                 </div>
@@ -308,18 +335,18 @@ export default function Staging() {
       )}
 
       {/* Ingest Modal */}
-      {isIngestModalOpen && (
-        <div className="modal-overlay flex-center animate-fade-in">
-          <div className="modal-card glass-panel">
-            <div className="modal-header flex-between">
-              <h2>Ingest Raw Interview Prompt</h2>
-              <button className="close-btn" onClick={() => setIsIngestModalOpen(false)}>
+      {isIngestModalOpen && createPortal(
+        <div className="modal-overlay" onClick={() => setIsIngestModalOpen(false)}>
+          <div className="ingest-modal-card" onClick={(e) => e.stopPropagation()}>
+            <div className="inspector-modal-header" style={{ padding: '0 0 16px 0', borderBottom: '1px solid #e2e8f0' }}>
+              <h2 className="inspector-title">Ingest Raw Interview Prompt</h2>
+              <button className="close-btn" onClick={() => setIsIngestModalOpen(false)} title="Close">
                 <X size={20} />
               </button>
             </div>
-            <form onSubmit={handleIngestSubmit}>
-              <div className="form-group mb-4">
-                <label className="block text-sm font-semibold mb-2">Source Type</label>
+            <form onSubmit={handleIngestSubmit} style={{ marginTop: '16px' }}>
+              <div style={{ marginBottom: '16px' }}>
+                <label className="block text-sm font-semibold mb-2" style={{ display: 'block', fontSize: '0.85rem', fontWeight: 700, marginBottom: '6px', color: '#334155' }}>Source Type</label>
                 <select 
                   className="input-field" 
                   value={source} 
@@ -332,8 +359,8 @@ export default function Staging() {
                 </select>
               </div>
 
-              <div className="form-group mb-4">
-                <label className="block text-sm font-semibold mb-2">Raw Question Statement</label>
+              <div style={{ marginBottom: '20px' }}>
+                <label className="block text-sm font-semibold mb-2" style={{ display: 'block', fontSize: '0.85rem', fontWeight: 700, marginBottom: '6px', color: '#334155' }}>Raw Question Statement</label>
                 <textarea 
                   className="input-field textarea-field" 
                   rows={6}
@@ -344,93 +371,139 @@ export default function Staging() {
                 />
               </div>
 
-              <div className="modal-footer flex-end gap-2">
-                <button type="button" className="btn-secondary" onClick={() => setIsIngestModalOpen(false)}>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+                <button type="button" className="staging-action-btn secondary" onClick={() => setIsIngestModalOpen(false)}>
                   Cancel
                 </button>
-                <button type="submit" className="btn-primary" disabled={isIngesting}>
-                  {isIngesting ? 'Ingesting & Processing...' : 'Start Pipeline'}
+                <button type="submit" className="staging-action-btn primary" disabled={isIngesting}>
+                  {isIngesting ? 'Ingesting...' : 'Start Pipeline'}
                 </button>
               </div>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Side-by-Side Testcase Inspector Modal */}
-      {inspectingQuestion && (
-        <div className="modal-overlay flex-center animate-fade-in">
-          <div className="modal-card inspector-modal glass-panel">
-            <div className="modal-header flex-between">
-              <div>
-                <h2>{inspectingQuestion.title || 'Untitled'}</h2>
-                <div className="text-xs text-muted mt-1">
+      {inspectingQuestion && createPortal(
+        <div className="modal-overlay" onClick={() => setInspectingQuestion(null)}>
+          <div className="inspector-modal-card" onClick={(e) => e.stopPropagation()}>
+            {/* Pinned Header */}
+            <div className="inspector-modal-header">
+              <div className="inspector-title-area">
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <h2 className="inspector-title">{inspectingQuestion.title || 'Untitled Question'}</h2>
+                  <span className={`badge badge-${inspectingQuestion.status.toLowerCase()}`}>
+                    {inspectingQuestion.status}
+                  </span>
+                </div>
+                <div className="inspector-tax-path">
                   Taxonomy: <code>$course$/top/{inspectingQuestion.category || 'DSA'}/{inspectingQuestion.subtopic || 'General'}</code>
                 </div>
               </div>
-              <button className="close-btn" onClick={() => setInspectingQuestion(null)}>
+              <button className="close-btn" onClick={() => setInspectingQuestion(null)} title="Close Inspector">
                 <X size={20} />
               </button>
             </div>
 
-            <div className="inspector-body flex gap-4">
+            {/* Structured 2-Column Body */}
+            <div className="inspector-modal-body">
               {/* Left Column: Problem Description & Constraints */}
-              <div className="inspector-left flex-1 glass-panel p-4">
-                <h3 className="section-title">Problem Statement</h3>
-                <div 
-                  className="problem-description text-sm" 
-                  dangerouslySetInnerHTML={{ __html: inspectingQuestion.description || inspectingQuestion.rawText }}
-                />
-                {inspectingQuestion.constraints && (
-                  <div className="mt-4 pt-3 border-t border-gray-800">
-                    <h4 className="text-xs font-semibold text-muted mb-1">Constraints</h4>
-                    <div dangerouslySetInnerHTML={{ __html: inspectingQuestion.constraints }} />
+              <div className="inspector-col">
+                <div className="inspector-section-card">
+                  <div className="inspector-card-header">
+                    <span className="inspector-heading-text">Problem Statement</span>
+                    <span className="inspector-heading-sub">Curated Problem</span>
                   </div>
-                )}
+                  <div className="inspector-desc-scroll">
+                    <div 
+                      className="inspector-html-content" 
+                      dangerouslySetInnerHTML={{ __html: inspectingQuestion.description || inspectingQuestion.rawText }}
+                    />
+                    {inspectingQuestion.constraints && (
+                      <div className="inspector-constraints-box">
+                        <h4 className="inspector-constraints-title">Constraints</h4>
+                        <div 
+                          className="inspector-html-content" 
+                          dangerouslySetInnerHTML={{ __html: inspectingQuestion.constraints }} 
+                        />
+                      </div>
+                    )}
+                  </div>
+                </div>
               </div>
 
               {/* Right Column: 10 Standard I/O Test Cases */}
-              <div className="inspector-right flex-1 glass-panel p-4">
-                <h3 className="section-title flex-between">
-                  <span>10 Standard I/O Test Cases</span>
-                  <span className="badge badge-success">{inspectingQuestion.sandboxVerdict || 'Verified'}</span>
-                </h3>
-                <div className="testcase-list">
-                  {inspectingQuestion.testCases && inspectingQuestion.testCases.length > 0 ? (
-                    inspectingQuestion.testCases.map((tc, idx) => (
-                      <div key={idx} className="tc-box glass-panel p-3 mb-2 rounded text-xs">
-                        <div className="tc-label flex-between font-semibold mb-1">
-                          <span>Case {idx + 1} {idx < 3 ? '(Sample)' : idx < 7 ? '(Edge)' : '(Stress)'}</span>
+              <div className="inspector-col">
+                <div className="inspector-section-card">
+                  <div className="inspector-card-header">
+                    <span className="inspector-heading-text">10 Standard I/O Test Cases</span>
+                    <span className="badge badge-success">
+                      {inspectingQuestion.sandboxVerdict || '10/10 Verified'}
+                    </span>
+                  </div>
+                  <div className="inspector-tc-scroll">
+                    {inspectingQuestion.testCases && inspectingQuestion.testCases.length > 0 ? (
+                      inspectingQuestion.testCases.map((tc, idx) => (
+                        <div key={idx} className="tc-card-item">
+                          <div className="tc-card-title">
+                            Case {idx + 1} {idx < 3 ? '(Sample)' : idx < 7 ? '(Edge)' : '(Stress)'}
+                          </div>
+                          <div className="tc-io-grid">
+                            <div className="tc-io-block">
+                              <span className="tc-io-label">stdin</span>
+                              <pre className="tc-pre">{tc.input || '(empty)'}</pre>
+                            </div>
+                            <div className="tc-io-block">
+                              <span className="tc-io-label">stdout</span>
+                              <pre className="tc-pre">{tc.expectedOutput ?? tc.output ?? ''}</pre>
+                            </div>
+                          </div>
                         </div>
-                        <div className="tc-io">
-                          <div className="mb-1"><strong>stdin:</strong> <pre className="bg-black p-1.5 rounded mt-0.5">{tc.input || '<em>(empty)</em>'}</pre></div>
-                          <div><strong>stdout:</strong> <pre className="bg-black p-1.5 rounded mt-0.5">{tc.expectedOutput ?? tc.output ?? ''}</pre></div>
-                        </div>
+                      ))
+                    ) : (
+                      <div className="text-muted text-sm italic" style={{ padding: '24px', textAlign: 'center' }}>
+                        No test cases generated yet.
                       </div>
-                    ))
-                  ) : (
-                    <div className="text-muted text-sm italic">No test cases generated yet.</div>
-                  )}
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
 
-            <div className="modal-footer flex-between mt-4 pt-3 border-t border-gray-800">
-              <button className="btn-secondary btn-sm" onClick={() => handleExportXml([inspectingQuestion.id])}>
-                <Download size={14} style={{ marginRight: '6px' }} />
-                Export this Moodle XML
+            {/* Pinned Modal Footer */}
+            <div className="inspector-modal-footer">
+              <button 
+                type="button" 
+                className="staging-action-btn secondary" 
+                onClick={() => handleExportXml([inspectingQuestion.id])}
+              >
+                <Download size={15} />
+                <span>Export Moodle XML</span>
               </button>
-              <div className="flex gap-2">
-                <button className="btn-delete btn-sm" onClick={() => handleDiscard(inspectingQuestion.id)}>
-                  Discard
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <button 
+                  type="button" 
+                  className="staging-action-btn danger" 
+                  onClick={() => handleDiscard(inspectingQuestion.id)}
+                >
+                  <Trash2 size={15} />
+                  <span>Discard</span>
                 </button>
-                <button className="btn-approve btn-sm" onClick={() => handleApprove(inspectingQuestion.id)}>
-                  Approve &amp; Publish
+                <button 
+                  type="button" 
+                  className="staging-action-btn primary" 
+                  onClick={() => handleApprove(inspectingQuestion.id)}
+                >
+                  <CheckCircle size={15} />
+                  <span>Approve &amp; Publish</span>
                 </button>
               </div>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

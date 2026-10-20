@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import Navbar from './components/Navbar';
 import Login from './pages/Login';
@@ -11,10 +11,13 @@ import SubmitPrompt from './pages/SubmitPrompt';
 import Profile from './pages/Profile';
 import Export from './pages/Export';
 import Staging from './pages/Staging';
+import ProtectedRoute from './components/ProtectedRoute';
 import { useAuthStore } from './store/useAuthStore';
 
 function App() {
-  const { isAuthenticated } = useAuthStore();
+  const { isAuthenticated, user } = useAuthStore();
+  const userRole = user?.role || 'STUDENT';
+  const defaultHome = !isAuthenticated ? '/login' : (userRole === 'FACULTY' ? '/staging' : '/');
 
   return (
     <Router>
@@ -22,17 +25,96 @@ function App() {
         <Navbar />
         <main>
           <Routes>
-            <Route path="/" element={<SubmitPrompt />} />
-            <Route path="/submit-prompt" element={<SubmitPrompt />} />
-            <Route path="/staging" element={<Staging />} />
-            <Route path="/export" element={<Export />} />
-            <Route path="/problems" element={<ProblemsList />} />
-            <Route path="/problems/:id" element={<ProblemDetails />} />
-            <Route path="/login" element={<Login />} />
-            <Route path="/signup" element={<Signup />} />
-            <Route path="/dashboard" element={<Dashboard />} />
-            <Route path="/category/:name" element={<CategoryView />} />
-            <Route path="/profile" element={<Profile />} />
+            {/* Student-Only Question Feeder */}
+            <Route 
+              path="/" 
+              element={
+                <ProtectedRoute allowedRole="STUDENT">
+                  <SubmitPrompt />
+                </ProtectedRoute>
+              } 
+            />
+            <Route 
+              path="/submit-prompt" 
+              element={
+                <ProtectedRoute allowedRole="STUDENT">
+                  <SubmitPrompt />
+                </ProtectedRoute>
+              } 
+            />
+
+            {/* Faculty-Only Portal Routes */}
+            <Route 
+              path="/staging" 
+              element={
+                <ProtectedRoute allowedRole="FACULTY">
+                  <Staging />
+                </ProtectedRoute>
+              } 
+            />
+            <Route 
+              path="/export" 
+              element={
+                <ProtectedRoute allowedRole="FACULTY">
+                  <Export />
+                </ProtectedRoute>
+              } 
+            />
+            <Route 
+              path="/problems" 
+              element={
+                <ProtectedRoute allowedRole="FACULTY">
+                  <ProblemsList />
+                </ProtectedRoute>
+              } 
+            />
+            <Route 
+              path="/problems/:id" 
+              element={
+                <ProtectedRoute allowedRole="FACULTY">
+                  <ProblemDetails />
+                </ProtectedRoute>
+              } 
+            />
+            <Route 
+              path="/dashboard" 
+              element={
+                <ProtectedRoute allowedRole="FACULTY">
+                  <Dashboard />
+                </ProtectedRoute>
+              } 
+            />
+            <Route 
+              path="/category/:name" 
+              element={
+                <ProtectedRoute allowedRole="FACULTY">
+                  <CategoryView />
+                </ProtectedRoute>
+              } 
+            />
+
+            {/* Authenticated Profile Route */}
+            <Route 
+              path="/profile" 
+              element={
+                <ProtectedRoute>
+                  <Profile />
+                </ProtectedRoute>
+              } 
+            />
+
+            {/* Public Authentication Routes */}
+            <Route 
+              path="/login" 
+              element={isAuthenticated ? <Navigate to={defaultHome} replace /> : <Login />} 
+            />
+            <Route 
+              path="/signup" 
+              element={isAuthenticated ? <Navigate to={defaultHome} replace /> : <Signup />} 
+            />
+
+            {/* Catch-all fallback */}
+            <Route path="*" element={<Navigate to={defaultHome} replace />} />
           </Routes>
         </main>
       </div>
