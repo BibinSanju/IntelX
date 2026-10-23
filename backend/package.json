@@ -4,7 +4,7 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "npx prisma generate && tsc",
-    "test:unit": "tsx src/moodleXmlBuilder.test.ts && tsx src/embeddingService.test.ts && tsx src/transcribe.test.ts",
+    "test:unit": "tsx src/moodleXmlBuilder.test.ts && tsx src/embeddingService.test.ts && tsx src/providerKeyPool.test.ts && tsx src/googlePromptService.test.ts && tsx src/facultyTextIngestionService.test.ts && tsx src/screenshotIngestionService.test.ts && tsx src/leetcodeEnrichmentService.test.ts && tsx src/transcribe.test.ts",
     "test": "npm run test:unit",
     "start": "node dist/index.js"
   },

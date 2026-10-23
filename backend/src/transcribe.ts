@@ -1,10 +1,7 @@
 import { Groq, toFile } from 'groq-sdk';
+import { ProviderPoolExhaustedError, getProviderPool } from './providerKeyPool.js';
 import dotenv from 'dotenv';
 dotenv.config();
-
-const groq = new Groq({
-  apiKey: process.env.GROQ_API_KEY,
-});
 
 // Domain priming prompt to bias Whisper toward technical, algorithmic, and programming terms
 const CODING_DOMAIN_PROMPT = 
@@ -28,12 +25,6 @@ export async function transcribeAudio(
   fileName: string = 'recording.webm', 
   mimeType: string = 'audio/webm'
 ): Promise<TranscriptionResult> {
-  if (!process.env.GROQ_API_KEY) {
-    throw new Error('GROQ_API_KEY is not configured in environment');
-  }
-
-  const uploadableFile = await toFile(buffer, fileName, { type: mimeType });
-
   const candidateModels = [
     'whisper-large-v3-turbo',
     'whisper-large-v3',
@@ -46,12 +37,18 @@ export async function transcribeAudio(
       console.log(`[STT] Sending audio to Groq Whisper model '${model}'... (${(buffer.length / 1024).toFixed(1)} KB)`);
       const startTime = Date.now();
 
-      const response = await groq.audio.transcriptions.create({
-        file: uploadableFile,
-        model,
-        prompt: CODING_DOMAIN_PROMPT,
-        response_format: 'json',
-        temperature: 0.0,
+      const response = await getProviderPool('groq-audio').execute(async apiKey => {
+        const groq = new Groq({ apiKey, maxRetries: 0 });
+        const uploadableFile = await toFile(buffer, fileName, { type: mimeType });
+        return groq.audio.transcriptions.create({
+          file: uploadableFile,
+          model,
+          prompt: CODING_DOMAIN_PROMPT,
+          response_format: 'json',
+          temperature: 0.0,
+        });
+      }, {
+        operation: `transcription:${model}`,
       });
 
       const elapsed = Date.now() - startTime;
@@ -64,6 +61,7 @@ export async function transcribeAudio(
       };
     } catch (err: any) {
       lastError = err;
+      if (err instanceof ProviderPoolExhaustedError) throw err;
       console.warn(`[STT] Model '${model}' failed (${err.status || err.name}: ${err.message}). Trying next candidate...`);
     }
   }

@@ -21,12 +21,27 @@ interface PipelineQuestionData {
   sandboxVerdict: string | null;
   status: string;
   testCases?: any[];
+  inputTags?: string[];
+  inputHints?: string[];
+  preprocessing?: {
+    provider?: string;
+    status?: string;
+    model?: string;
+  } | null;
+  enrichment?: {
+    provider?: string;
+    status?: string;
+    confidence?: number;
+    question?: { title?: string; url?: string; topicTags?: Array<{ name: string }> };
+  } | null;
 }
 
 export default function SubmitPrompt() {
   const navigate = useNavigate();
   const [company, setCompany] = useState('');
   const [role, setRole] = useState('');
+  const [tags, setTags] = useState('');
+  const [hints, setHints] = useState('');
   const [rawText, setRawText] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [activeQuestionId, setActiveQuestionId] = useState<string | null>(null);
@@ -58,7 +73,7 @@ export default function SubmitPrompt() {
         if (res.data.success && isSubscribed) {
           setPipelineData(res.data.data);
           const currentStatus = res.data.status;
-          if (['STAGED', 'DUPLICATE_FOUND', 'FAILED_SANDBOX', 'FAILED_AI', 'FAILED_SECURITY'].includes(currentStatus)) {
+          if (['STAGED', 'DUPLICATE_FOUND', 'FAILED_PREPROCESSING', 'FAILED_SANDBOX', 'FAILED_AI', 'FAILED_SECURITY'].includes(currentStatus)) {
             clearInterval(interval);
           }
         }
@@ -88,7 +103,9 @@ export default function SubmitPrompt() {
         
       const res = await axios.post(`${API_BASE}/api/ingest`, {
         raw_text: rawText,
-        source: sourceTag
+        source: sourceTag,
+        tags,
+        hints
       });
 
       if (res.data.success) {
@@ -110,6 +127,8 @@ export default function SubmitPrompt() {
     setRawText('');
     setCompany('');
     setRole('');
+    setTags('');
+    setHints('');
     setSttFeedback(null);
   };
 
@@ -140,6 +159,10 @@ export default function SubmitPrompt() {
 
   const getStepState = (stepIndex: number) => {
     if (!activeQuestionId) return 'pending';
+
+    if (currentStatus === 'FAILED_PREPROCESSING') {
+      return stepIndex === 0 ? 'failed' : 'pending';
+    }
     
     if (currentStatus === 'DUPLICATE_FOUND') {
       if (stepIndex <= 1) return 'completed';
@@ -148,33 +171,50 @@ export default function SubmitPrompt() {
     }
 
     if (currentStatus === 'FAILED_SECURITY') {
-      if (stepIndex <= 3) return 'completed';
+      if (stepIndex < 4) return 'completed';
       if (stepIndex === 4) return 'failed';
       return 'pending';
     }
 
-    if (currentStatus === 'FAILED_AI' || currentStatus === 'FAILED_SANDBOX') {
-      if (stepIndex <= 2) return 'completed';
-      return 'failed';
+    if (currentStatus === 'FAILED_AI') {
+      if (pipelineData?.title) {
+        if (stepIndex < 3) return 'completed';
+        if (stepIndex === 3) return 'failed';
+        return 'pending';
+      }
+      if (stepIndex === 0) return 'completed';
+      if (stepIndex === 1) return 'failed';
+      return 'pending';
+    }
+
+    if (currentStatus === 'FAILED_SANDBOX') {
+      if (stepIndex < 4) return 'completed';
+      if (stepIndex === 4) return 'failed';
+      return 'pending';
     }
 
     if (currentStatus === 'STAGED') return 'completed';
     if (currentStatus === 'PENDING_SANDBOX') {
+      if (stepIndex < 4) return 'completed';
+      if (stepIndex === 4) return 'active';
+      return 'pending';
+    }
+    if (currentStatus === 'PENDING_SYNTHESIS') {
       if (stepIndex < 3) return 'completed';
       if (stepIndex === 3) return 'active';
       return 'pending';
     }
-    if (currentStatus === 'PENDING_SYNTHESIS') {
+    if (currentStatus === 'PENDING_DEDUP') {
       if (stepIndex < 2) return 'completed';
       if (stepIndex === 2) return 'active';
       return 'pending';
     }
-    if (currentStatus === 'PENDING_DEDUP') {
-      if (stepIndex < 1) return 'completed';
+    if (currentStatus === 'PENDING_ENRICHMENT') {
+      if (stepIndex === 0) return 'completed';
       if (stepIndex === 1) return 'active';
       return 'pending';
     }
-    if (currentStatus === 'PENDING_AI') {
+    if (currentStatus === 'PENDING_AI' || currentStatus === 'PENDING_SUMMARY') {
       if (stepIndex === 0) return 'active';
       return 'pending';
     }
@@ -230,6 +270,34 @@ export default function SubmitPrompt() {
                     placeholder="e.g. SDE Intern, OA, Technical Round" 
                     value={role}
                     onChange={(e) => setRole(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              <div className="feeder-row-grid">
+                <div className="feeder-input-group">
+                  <label className="feeder-clean-label">
+                    Topic Tags <span className="feeder-label-opt">(Optional)</span>
+                  </label>
+                  <input
+                    type="text"
+                    className="feeder-text-input"
+                    placeholder="e.g. arrays, sliding window, graphs"
+                    value={tags}
+                    onChange={(e) => setTags(e.target.value)}
+                  />
+                </div>
+
+                <div className="feeder-input-group">
+                  <label className="feeder-clean-label">
+                    Remembered Hints <span className="feeder-label-opt">(Optional; one per line)</span>
+                  </label>
+                  <textarea
+                    className="feeder-textarea-input"
+                    rows={3}
+                    placeholder="Use a hash map&#10;Interviewer asked for O(n)"
+                    value={hints}
+                    onChange={(e) => setHints(e.target.value)}
                   />
                 </div>
               </div>
@@ -371,7 +439,10 @@ export default function SubmitPrompt() {
                 {currentStatus === 'FAILED_SECURITY' && (
                   <span className="feeder-status-tag danger">Flagged Content</span>
                 )}
-                {['PENDING_AI', 'PENDING_DEDUP', 'PENDING_SYNTHESIS', 'PENDING_SANDBOX'].includes(currentStatus) && (
+                {['FAILED_PREPROCESSING', 'FAILED_AI', 'FAILED_SANDBOX'].includes(currentStatus) && (
+                  <span className="feeder-status-tag danger">Processing Failed</span>
+                )}
+                {['PENDING_AI', 'PENDING_SUMMARY', 'PENDING_ENRICHMENT', 'PENDING_DEDUP', 'PENDING_SYNTHESIS', 'PENDING_SANDBOX'].includes(currentStatus) && (
                   <span className="feeder-status-tag processing">Processing...</span>
                 )}
               </div>
@@ -383,14 +454,29 @@ export default function SubmitPrompt() {
                   {getStepState(0) === 'completed' ? <Check size={16} /> : '1'}
                 </div>
                 <div className="feeder-step-body">
-                  <div className="feeder-step-name">Content Ingestion</div>
-                  <div className="feeder-step-desc">Input received and sanitized.</div>
+                  <div className="feeder-step-name">Normalize &amp; Prepare</div>
+                  <div className="feeder-step-desc">
+                    BeautifulSoup produces Markdown; Google AI Studio creates the structured evidence brief.
+                    {currentStatus === 'FAILED_PREPROCESSING' && pipelineData?.sandboxVerdict && (
+                      <div className="feeder-step-alert">{pipelineData.sandboxVerdict}</div>
+                    )}
+                  </div>
                 </div>
               </div>
 
               <div className="feeder-step-item">
                 <div className={`feeder-step-circle ${getStepState(1)}`}>
                   {getStepState(1) === 'completed' ? <Check size={16} /> : '2'}
+                </div>
+                <div className="feeder-step-body">
+                  <div className="feeder-step-name">Groq Reconstruction &amp; Enrichment</div>
+                  <div className="feeder-step-desc">Groq formalizes the problem and checks LeetCode hints, tags, and discussions.</div>
+                </div>
+              </div>
+
+              <div className="feeder-step-item">
+                <div className={`feeder-step-circle ${getStepState(2)}`}>
+                  {getStepState(2) === 'completed' ? <Check size={16} /> : '3'}
                 </div>
                 <div className="feeder-step-body">
                   <div className="feeder-step-name">Duplicate Detection</div>
@@ -406,8 +492,8 @@ export default function SubmitPrompt() {
               </div>
 
               <div className="feeder-step-item">
-                <div className={`feeder-step-circle ${getStepState(2)}`}>
-                  {getStepState(2) === 'completed' ? <Check size={16} /> : '3'}
+                <div className={`feeder-step-circle ${getStepState(3)}`}>
+                  {getStepState(3) === 'completed' ? <Check size={16} /> : '4'}
                 </div>
                 <div className="feeder-step-body">
                   <div className="feeder-step-name">AI Problem &amp; Testcase Synthesis</div>
@@ -416,8 +502,8 @@ export default function SubmitPrompt() {
               </div>
 
               <div className="feeder-step-item">
-                <div className={`feeder-step-circle ${getStepState(3)}`}>
-                  {getStepState(3) === 'completed' ? <Check size={16} /> : '4'}
+                <div className={`feeder-step-circle ${getStepState(4)}`}>
+                  {getStepState(4) === 'completed' ? <Check size={16} /> : '5'}
                 </div>
                 <div className="feeder-step-body">
                   <div className="feeder-step-name">Code Sandbox Execution</div>
@@ -431,8 +517,8 @@ export default function SubmitPrompt() {
               </div>
 
               <div className="feeder-step-item">
-                <div className={`feeder-step-circle ${getStepState(4)}`}>
-                  {getStepState(4) === 'completed' ? <Check size={16} /> : '5'}
+                <div className={`feeder-step-circle ${getStepState(5)}`}>
+                  {getStepState(5) === 'completed' ? <Check size={16} /> : '6'}
                 </div>
                 <div className="feeder-step-body">
                   <div className="feeder-step-name">Staged for Review</div>
@@ -449,6 +535,18 @@ export default function SubmitPrompt() {
                   <span className="feeder-result-tag">{pipelineData.category || 'DSA'}</span>
                 </div>
                 <h4 className="feeder-result-title">{pipelineData.title}</h4>
+                {pipelineData.enrichment?.status === 'matched' && pipelineData.enrichment.question && (
+                  <div className="feeder-result-tests">
+                    <Sparkles size={16} />
+                    Matched LeetCode evidence:&nbsp;
+                    <a href={pipelineData.enrichment.question.url} target="_blank" rel="noreferrer">
+                      {pipelineData.enrichment.question.title || 'View problem'}
+                    </a>
+                    {typeof pipelineData.enrichment.confidence === 'number' && (
+                      <span>&nbsp;({Math.round(pipelineData.enrichment.confidence * 100)}% confidence)</span>
+                    )}
+                  </div>
+                )}
                 {pipelineData.description && (
                   <div 
                     className="feeder-result-desc" 

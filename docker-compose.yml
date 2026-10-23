@@ -55,8 +55,6 @@ services:
       DATABASE_URL: postgresql://admin:adminpassword@postgres:5432/placement_portal
       DIRECT_URL: postgresql://admin:adminpassword@postgres:5432/placement_portal
       EXECUTOR_URL: http://executor:8080
-    volumes:
-      - ./backend/dist:/app/dist:ro
     healthcheck:
       test: ["CMD-SHELL", "node -e \"require('http').get('http://localhost:3000/', (r) => { process.exit(r.statusCode === 200 ? 0 : 1); });\""]
       interval: 5s

@@ -1,7 +1,9 @@
 import { test, expect } from '@playwright/test';
 
 test.describe('End-to-End Question Curation, Sandbox & Moodle XML Pipeline', () => {
-  test.setTimeout(180000);
+  // Free-tier token pacing can intentionally spread the multi-stage Groq work
+  // across several minute windows instead of triggering 429 responses.
+  test.setTimeout(600000);
 
   test('should ingest prompt, verify 10/10 in sandbox, stage in UI, and export Moodle XML', async ({ page, request, baseURL }) => {
     const apiUrl = process.env.VITE_API_BASE || 'http://localhost:3000';
@@ -28,8 +30,8 @@ test.describe('End-to-End Question Curation, Sandbox & Moodle XML Pipeline', () 
       console.log(`[E2E Poll] Status: ${statusData.status} | Verdict: ${statusData.data?.sandboxVerdict || 'Processing...'}`);
       return statusData.status;
     }, {
-      message: 'Waiting for Groq synthesis and Sandbox execution',
-      timeout: 120000,
+      message: 'Waiting for Gemini preparation, Groq synthesis, and sandbox execution',
+      timeout: 480000,
       intervals: [2000, 3000, 4000]
     }).toBe('STAGED');
 

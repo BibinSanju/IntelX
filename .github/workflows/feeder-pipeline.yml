@@ -110,6 +110,12 @@ jobs:
           cd backend
           npx tsx src/embeddingService.test.ts
 
+      - name: 🧾 Execute Google AI Studio Brief Builder Tests
+        run: |
+          cd backend
+          npx tsx src/providerKeyPool.test.ts
+          npx tsx src/googlePromptService.test.ts
+
       - name: 🐳 Execute Sandbox Isolation & Timeout Enforcement Suite
         run: |
           cd executor
@@ -191,6 +197,13 @@ jobs:
       EXECUTOR_URL: http://127.0.0.1:8080
       VITE_API_BASE: http://127.0.0.1:3000
       FRONTEND_URL: http://127.0.0.1:5173
+      GOOGLE_API_KEYS: ${{ secrets.GOOGLE_API_KEYS }}
+      GOOGLE_QUOTA_SCOPE: per-project
+      GOOGLE_MAX_ATTEMPTS: 20
+      GROQ_API_KEYS: ${{ secrets.GROQ_API_KEYS }}
+      GROQ_QUOTA_SCOPE: per-organization
+      GROQ_MAX_ATTEMPTS: 20
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
       GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
 
     services:
@@ -238,19 +251,27 @@ jobs:
 
       - name: 🚀 Start Services (Executor + Backend + Frontend)
         env:
+          GOOGLE_API_KEYS: ${{ secrets.GOOGLE_API_KEYS }}
+          GROQ_API_KEYS: ${{ secrets.GROQ_API_KEYS }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
         run: |
-          if [ -z "$GROQ_API_KEY" ]; then
-            echo "::warning::GROQ_API_KEY secret is not set or empty in GitHub Secrets!"
+          if [ -z "$GOOGLE_API_KEYS" ] && [ -z "$GEMINI_API_KEY" ]; then
+            echo "::warning::Neither GOOGLE_API_KEYS nor GEMINI_API_KEY is set; preprocessing will fail."
           else
-            echo "✅ GROQ_API_KEY secret verified (length: ${#GROQ_API_KEY})"
+            echo "✅ Google provider credential configuration detected (values not printed)"
+          fi
+          if [ -z "$GROQ_API_KEYS" ] && [ -z "$GROQ_API_KEY" ]; then
+            echo "::warning::Neither GROQ_API_KEYS nor GROQ_API_KEY is set; Groq processing will fail."
+          else
+            echo "✅ Groq provider credential configuration detected (values not printed)"
           fi
 
           echo "Starting Executor on :8080..."
           (cd executor && PORT=8080 node server.js) > /tmp/executor.log 2>&1 &
           
           echo "Starting Backend on :3000..."
-          (cd backend && PORT=3000 GROQ_API_KEY="$GROQ_API_KEY" npx tsx src/index.ts) > /tmp/backend.log 2>&1 &
+          (cd backend && PORT=3000 GOOGLE_API_KEYS="$GOOGLE_API_KEYS" GROQ_API_KEYS="$GROQ_API_KEYS" GEMINI_API_KEY="$GEMINI_API_KEY" GROQ_API_KEY="$GROQ_API_KEY" npx tsx src/index.ts) > /tmp/backend.log 2>&1 &
           
           echo "Starting Frontend on :5173..."
           (cd frontend && npx vite --host 0.0.0.0 --port 5173) > /tmp/frontend.log 2>&1 &

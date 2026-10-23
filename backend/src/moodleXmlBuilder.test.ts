@@ -29,6 +29,19 @@ function testMoodleXml() {
             testCases: [
                 { input: '1\n', expectedOutput: '1\n' }
             ]
+        },
+        {
+            id: 'q3',
+            title: 'Explain database normalization',
+            description: '<p>Explain 1NF, 2NF, and 3NF.</p>',
+            category: 'DBMS',
+            subtopic: 'Normalization',
+            difficulty: 'Medium',
+            type: 'Theory' as const,
+            metadata: {
+                detailed_answer: 'Normalization reduces redundancy and update anomalies.',
+                scoring_rubric: { max_score: 100, criteria: ['Defines normal forms (60 points)', 'Explains tradeoffs (40 points)'] }
+            }
         }
     ];
 
@@ -43,8 +56,11 @@ function testMoodleXml() {
     assert(xml.includes('<![CDATA[Two Sum Problem]]>'), 'Must escape title in CDATA');
     assert(xml.includes('<coderunnertype>python3</coderunnertype>'), 'Must declare python3 coderunner type');
     assert(xml.includes('useasexample="1"'), 'First sample test case should be marked as example');
+    assert(xml.includes('<question type="essay">'), 'Theory questions must export as Moodle essays');
+    assert(xml.includes('Normalization reduces redundancy'), 'Theory reference answer must be exported as feedback');
+    assert(xml.includes('Defines normal forms (60 points)'), 'Theory grading rubric must be exported');
 
-    console.log('✅ All Moodle CodeRunner XML Unit Tests Passed Successfully!');
+    console.log('✅ All Moodle XML Unit Tests Passed Successfully!');
 }
 
 testMoodleXml();

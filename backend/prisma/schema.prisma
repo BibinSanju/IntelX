@@ -12,7 +12,20 @@ model StagedQuestion {
   id              String   @id @default(uuid())
   rawText         String
   source          String   @default("Scraper") // e.g. Student, Scraper
-  status          String   @default("PENDING_AI") // PENDING_AI, PENDING_SANDBOX, PENDING_FACULTY, APPROVED
+  status          String   @default("PENDING_AI") // PENDING_AI, PENDING_SUMMARY, PENDING_ENRICHMENT, PENDING_DEDUP, PENDING_SYNTHESIS, PENDING_SANDBOX, STAGED, APPROVED, failure states
+
+  // Evidence supplied by the submitter or source scraper
+  inputTags       String[] @default([])
+  inputHints      String[] @default([])
+  sourceUrl       String?
+  externalId      String?
+  sourceMetadata  Json?
+
+  // Auditable AI-provider handoff
+  preprocessing   Json?    // Google AI Studio problem brief and provider metadata
+
+  // Matched third-party context (for example, LeetCode hints/discussions)
+  enrichment      Json?
   
   // AI Generated Fields (Nullable until processed)
   title           String?

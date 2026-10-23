@@ -1,0 +1,23 @@
+{
+  "post": {
+    "id": "replace-with-reddit-post-id",
+    "subreddit": "leetcode",
+    "title": "Question asked in my technical interview",
+    "selftext": "Paste the student recollection here. Include enough detail to identify the problem, constraints, examples, hints, and anything the interviewer asked.",
+    "permalink": "/r/leetcode/comments/replace-with-reddit-post-id/example/",
+    "score": 0,
+    "num_comments": 2,
+    "over_18": false,
+    "stickied": false
+  },
+  "comments": [
+    {
+      "body": "Optional useful discussion excerpt, solution hint, or clarification.",
+      "score": 2
+    },
+    {
+      "body": "A second optional excerpt. Do not include usernames or profile information.",
+      "score": 1
+    }
+  ]
+}
