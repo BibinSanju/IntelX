@@ -1,6 +1,7 @@
 import requests
 import json
 import time
+from content_normalizer import html_to_markdown
 
 class LeetCodeScraper:
     def __init__(self):
@@ -51,13 +52,16 @@ class LeetCodeScraper:
         query = """
         query questionData($titleSlug: String!) {
           question(titleSlug: $titleSlug) {
+            questionFrontendId
             title
             titleSlug
             content
             isPaidOnly
             difficulty
+            hints
             topicTags {
               name
+              slug
             }
           }
         }
@@ -72,7 +76,7 @@ class LeetCodeScraper:
 
     def fetch_questions(self, limit=10):
         """
-        High level function to fetch a list of questions with their details (including raw HTML content).
+        Fetch question details and normalize the page HTML with BeautifulSoup.
         """
         problems = self.fetch_problem_list(limit=limit)
         results = []
@@ -87,12 +91,21 @@ class LeetCodeScraper:
             # Format the output as requested by the plan
             tags = [tag.get("name") for tag in p.get("topicTags", [])]
             
+            raw_html = details.get("content") or ""
+            markdown_content = html_to_markdown(raw_html)
             results.append({
                 "title": p.get("title"),
                 "titleSlug": title_slug,
                 "difficulty": p.get("difficulty"),
                 "tags": tags,
-                "html_content": details.get("content")
+                "hints": details.get("hints", []),
+                "external_id": details.get("questionFrontendId") or p.get("frontendQuestionId"),
+                "source_url": f"https://leetcode.com/problems/{title_slug}/",
+                # markdown_content is the canonical downstream representation.
+                # html_content remains for older seed scripts during migration.
+                "markdown_content": markdown_content,
+                "raw_text": markdown_content,
+                "html_content": raw_html
             })
             
             # small delay to prevent rate limiting
@@ -108,8 +121,8 @@ if __name__ == "__main__":
         print(f"Title: {q['title']}")
         print(f"Difficulty: {q['difficulty']}")
         print(f"Tags: {q['tags']}")
-        content_len = len(q['html_content']) if q.get('html_content') else 0
+        content_len = len(q['markdown_content']) if q.get('markdown_content') else 0
         print(f"Content Length: {content_len} chars")
         if content_len > 0:
-            print(f"Full Content:\n{q['html_content']}")
+            print(f"Normalized Markdown:\n{q['markdown_content']}")
         print("-" * 50)

@@ -21,9 +21,31 @@ interface StagedQuestion {
   status: string;
   source: string;
   createdAt: string;
+  inputTags?: string[];
+  inputHints?: string[];
+  sourceUrl?: string | null;
+  sourceMetadata?: { content_type?: string; contentType?: string } | null;
+  enrichment?: {
+    status?: string;
+    confidence?: number;
+    contentType?: string;
+    metadata?: {
+      detailed_answer?: string;
+      concise_answer?: string;
+      expected_keywords?: string[];
+      expected_concepts?: string[];
+      scoring_rubric?: { max_score?: number; criteria?: string[] };
+    };
+    question?: { title?: string; url?: string };
+  } | null;
   testCases?: Array<{ input: string; expectedOutput?: string; output?: string }>;
   sandboxVerdict?: string | null;
 }
+
+const isTheoryQuestion = (question: StagedQuestion) =>
+  question.sourceMetadata?.content_type === 'theory'
+  || question.sourceMetadata?.contentType === 'theory'
+  || question.enrichment?.contentType === 'theory';
 
 export default function Staging() {
   const [questions, setQuestions] = useState<StagedQuestion[]>([]);
@@ -38,6 +60,8 @@ export default function Staging() {
   const [isIngestModalOpen, setIsIngestModalOpen] = useState(false);
   const [rawText, setRawText] = useState('');
   const [source, setSource] = useState('Student Interview');
+  const [tags, setTags] = useState('');
+  const [hints, setHints] = useState('');
   const [isIngesting, setIsIngesting] = useState(false);
   const [sttFeedback, setSttFeedback] = useState<string | null>(null);
   const audioFileInputRef = useRef<HTMLInputElement>(null);
@@ -177,10 +201,14 @@ export default function Staging() {
       setIsIngesting(true);
       const res = await axios.post(`${API_BASE}/api/ingest`, {
         raw_text: rawText,
-        source: source
+        source,
+        tags,
+        hints
       });
       if (res.data.success) {
         setRawText('');
+        setTags('');
+        setHints('');
         setIsIngestModalOpen(false);
         fetchStaged();
       }
@@ -240,7 +268,7 @@ export default function Staging() {
       {/* Filter Tabs */}
       <div className="staging-tabs-wrapper">
         <div className="staging-tabs">
-          {['ALL', 'STAGED', 'PENDING_AI', 'DUPLICATE_FOUND', 'FAILED_SANDBOX', 'FAILED_SECURITY'].map(tab => (
+          {['ALL', 'STAGED', 'PENDING_SUMMARY', 'PENDING_AI', 'DUPLICATE_FOUND', 'FAILED_PREPROCESSING', 'FAILED_SANDBOX', 'FAILED_AI', 'FAILED_SECURITY'].map(tab => (
             <button
               key={tab}
               className={`tab-btn ${activeTab === tab ? 'active' : ''}`}
@@ -328,7 +356,11 @@ export default function Staging() {
                 <div className="staged-meta">
                   <span>Source: <strong>{q.source}</strong></span>
                   <span>Taxonomy: <strong>{q.category || 'DSA'} &gt; {q.subtopic || 'General'}</strong></span>
-                  <span>Test Cases: <strong>{q.testCases?.length || 0}/10 Verified</strong></span>
+                  {isTheoryQuestion(q) ? (
+                    <span>Assessment: <strong>Reference answer + rubric</strong></span>
+                  ) : (
+                    <span>Test Cases: <strong>{q.testCases?.length || 0}/10 Verified</strong></span>
+                  )}
                   <span>{new Date(q.createdAt).toLocaleString()}</span>
                 </div>
 
@@ -398,6 +430,31 @@ export default function Staging() {
                   <option value="Online Contest">Online Contest Scraping</option>
                   <option value="Audio Transcription">Audio / Voice Note Transcript</option>
                 </select>
+              </div>
+
+              <div style={{ marginBottom: '16px' }}>
+                <label className="block text-sm font-semibold mb-2" style={{ display: 'block', fontSize: '0.85rem', fontWeight: 700, marginBottom: '6px', color: '#334155' }}>
+                  Topic Tags (optional, comma-separated)
+                </label>
+                <input
+                  className="input-field"
+                  value={tags}
+                  onChange={(e) => setTags(e.target.value)}
+                  placeholder="arrays, graph, dynamic programming"
+                />
+              </div>
+
+              <div style={{ marginBottom: '16px' }}>
+                <label className="block text-sm font-semibold mb-2" style={{ display: 'block', fontSize: '0.85rem', fontWeight: 700, marginBottom: '6px', color: '#334155' }}>
+                  Remembered Hints (optional, one per line)
+                </label>
+                <textarea
+                  className="input-field textarea-field"
+                  rows={3}
+                  value={hints}
+                  onChange={(e) => setHints(e.target.value)}
+                  placeholder={'Use a hash map\nInterviewer requested O(n)'}
+                />
               </div>
 
               <div style={{ marginBottom: '20px' }}>
@@ -550,6 +607,29 @@ export default function Staging() {
                         />
                       </div>
                     )}
+                    {inspectingQuestion.inputTags && inspectingQuestion.inputTags.length > 0 && (
+                      <div className="inspector-constraints-box">
+                        <h4 className="inspector-constraints-title">Submitted Tags</h4>
+                        <div>{inspectingQuestion.inputTags.join(', ')}</div>
+                      </div>
+                    )}
+                    {inspectingQuestion.inputHints && inspectingQuestion.inputHints.length > 0 && (
+                      <div className="inspector-constraints-box">
+                        <h4 className="inspector-constraints-title">Submitted Hints</h4>
+                        <ul>{inspectingQuestion.inputHints.map((hint, index) => <li key={index}>{hint}</li>)}</ul>
+                      </div>
+                    )}
+                    {inspectingQuestion.enrichment?.status === 'matched' && inspectingQuestion.enrichment.question?.url && (
+                      <div className="inspector-constraints-box">
+                        <h4 className="inspector-constraints-title">LeetCode Evidence</h4>
+                        <a href={inspectingQuestion.enrichment.question.url} target="_blank" rel="noreferrer">
+                          {inspectingQuestion.enrichment.question.title || 'View matched problem'}
+                        </a>
+                        {typeof inspectingQuestion.enrichment.confidence === 'number' && (
+                          <span> ({Math.round(inspectingQuestion.enrichment.confidence * 100)}% confidence)</span>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -558,13 +638,30 @@ export default function Staging() {
               <div className="inspector-col">
                 <div className="inspector-section-card">
                   <div className="inspector-card-header">
-                    <span className="inspector-heading-text">10 Standard I/O Test Cases</span>
+                    <span className="inspector-heading-text">
+                      {isTheoryQuestion(inspectingQuestion) ? 'Reference Answer & Scoring Rubric' : '10 Standard I/O Test Cases'}
+                    </span>
                     <span className="badge badge-success">
                       {inspectingQuestion.sandboxVerdict || '10/10 Verified'}
                     </span>
                   </div>
                   <div className="inspector-tc-scroll">
-                    {inspectingQuestion.testCases && inspectingQuestion.testCases.length > 0 ? (
+                    {isTheoryQuestion(inspectingQuestion) ? (
+                      <div className="tc-card-item">
+                        <div className="tc-card-title">Reference answer</div>
+                        <pre className="tc-pre" style={{ whiteSpace: 'pre-wrap' }}>
+                          {inspectingQuestion.enrichment?.metadata?.detailed_answer
+                            || inspectingQuestion.enrichment?.metadata?.concise_answer
+                            || 'Reference answer is not available.'}
+                        </pre>
+                        <div className="tc-card-title" style={{ marginTop: '16px' }}>Scoring rubric</div>
+                        <ul>
+                          {(inspectingQuestion.enrichment?.metadata?.scoring_rubric?.criteria || []).map((criterion, index) => (
+                            <li key={index}>{criterion}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    ) : inspectingQuestion.testCases && inspectingQuestion.testCases.length > 0 ? (
                       inspectingQuestion.testCases.map((tc, idx) => (
                         <div key={idx} className="tc-card-item">
                           <div className="tc-card-title">

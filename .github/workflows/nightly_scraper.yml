@@ -7,9 +7,17 @@ on:
   workflow_dispatch:
     inputs:
       question_limit:
-        description: 'Number of questions to scrape and stage'
+        description: 'Number of LeetCode questions to scrape and stage'
         required: true
         default: '10'
+      theory_limit:
+        description: 'Total source-balanced theory questions to scrape and stage'
+        required: true
+        default: '8'
+      reddit_limit:
+        description: 'Approved Reddit interview-recollection posts to stage'
+        required: true
+        default: '4'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -40,12 +48,21 @@ jobs:
       - name: 🚀 Run Nightly Feeder Scraper
         run: |
           cd scraper
+          if [ -z "$FEEDER_API_URL" ]; then
+            echo "::error::FEEDER_API_URL secret is required because scraper ingestion must start the backend processing worker."
+            exit 1
+          fi
           LIMIT="${{ inputs.question_limit || '10' }}"
-          python nightly_feeder.py "$LIMIT"
+          THEORY_LIMIT="${{ inputs.theory_limit || '8' }}"
+          REDDIT_LIMIT="${{ inputs.reddit_limit || '4' }}"
+          python nightly_feeder.py "$LIMIT" "$THEORY_LIMIT" "$REDDIT_LIMIT"
         env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          DIRECT_URL: ${{ secrets.DIRECT_URL }}
-          FEEDER_API_URL: ${{ secrets.FEEDER_API_URL || 'http://localhost:3000' }}
+          FEEDER_API_URL: ${{ secrets.FEEDER_API_URL }}
+          REDDIT_API_APPROVED: ${{ vars.REDDIT_API_APPROVED }}
+          REDDIT_CLIENT_ID: ${{ secrets.REDDIT_CLIENT_ID }}
+          REDDIT_CLIENT_SECRET: ${{ secrets.REDDIT_CLIENT_SECRET }}
+          REDDIT_USER_AGENT: ${{ vars.REDDIT_USER_AGENT }}
+          REDDIT_SUBREDDITS: ${{ vars.REDDIT_SUBREDDITS }}
 
       - name: 📊 Log Completion
-        run: echo "✅ Nightly Scraper completed and fed new questions into Staging Queue!"
+        run: echo "✅ Nightly scraper completed and queued accepted questions for backend processing."

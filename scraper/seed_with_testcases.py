@@ -1,166 +1,64 @@
-import os
-import uuid
-import psycopg2
-import json
-import time
-from dotenv import load_dotenv
-from groq import Groq
-from leetcode_scraper import LeetCodeScraper
-from bs4 import BeautifulSoup
+"""Compatibility entry point for feeding LeetCode questions into the AI pipeline.
 
-def clean_html(html):
-    if not html:
-        return ""
-    soup = BeautifulSoup(html, "html.parser")
-    return soup.get_text()
-
-def generate_test_cases(client, title, html_description):
-    text_desc = clean_html(html_description)
-    prompt = f"""You are an expert programming test case generator.
-Analyze the following LeetCode problem description and generate exactly 10 valid test cases for it.
-Your output MUST be ONLY valid JSON matching this exact structure (an array of objects).
-Do not include any explanation, intro, or markdown formatting (no ```json or ``` blocks, just raw JSON).
-
-CRITICAL INSTRUCTION: The `input` and `expectedOutput` values MUST be formatted as single raw strings for Standard Input (stdin) and Standard Output (stdout), exactly like Codeforces or HackerRank test cases. 
-- Do NOT output a JSON object or array for the input/expectedOutput fields. They must be raw text strings with newline characters (\\n) separating variables.
-- NEVER use brackets `[]` or commas `,` in the strings.
-- For arrays/lists, output the size of the array first, followed by the elements separated by spaces (e.g., `3\\n1 2 3\\n`).
-- For 2D arrays, output the number of rows and columns, followed by the elements.
-
-Example JSON structure:
-[
-  {{
-    "input": "4\\n2 7 11 15\\n9\\n",
-    "expectedOutput": "0 1\\n"
-  }},
-  {{
-    "input": "3\\n3 2 4\\n6\\n",
-    "expectedOutput": "1 2\\n"
-  }}
-]
-
-Here is the problem:
-Title: {title}
-Description:
-{text_desc[:1500]} 
+Historically this script called Groq and wrote directly to PostgreSQL. It now
+submits BeautifulSoup-normalized Markdown to the backend so the required
+Google AI Studio -> Groq provider chain is always used.
 """
+
+import os
+import sys
+import time
+
+import requests
+from dotenv import load_dotenv
+
+from leetcode_scraper import LeetCodeScraper
+
+
+env_path = os.path.join(os.path.dirname(__file__), "..", "backend", ".env")
+load_dotenv(env_path)
+API_BASE = os.getenv("FEEDER_API_URL", "http://localhost:3000")
+
+
+def submit_question(question: dict) -> bool:
+    title_slug = question.get("titleSlug")
+    payload = {
+        "raw_text": (
+            f"Problem Title: {question.get('title')}\n"
+            f"Difficulty: {question.get('difficulty')}\n\n"
+            f"{question.get('markdown_content') or question.get('raw_text') or ''}"
+        ),
+        "source": "LeetCode_Seeder",
+        "tags": question.get("tags", []),
+        "hints": question.get("hints", []),
+        "source_url": question.get("source_url"),
+        "external_id": f"leetcode:{question.get('external_id')}" if question.get("external_id") else None,
+        "source_metadata": {
+            "provider": "leetcode",
+            "titleSlug": title_slug,
+            "difficulty": question.get("difficulty"),
+        },
+    }
     try:
-        chat_completion = client.chat.completions.create(
-            messages=[
-                {
-                    "role": "user",
-                    "content": prompt,
-                }
-            ],
-            model="llama-3.3-70b-versatile",
-            temperature=0.1,
-        )
-        response_text = chat_completion.choices[0].message.content.strip()
-        # Clean up any potential markdown if the LLM ignores instructions
-        if response_text.startswith("```json"):
-            response_text = response_text[7:]
-        if response_text.startswith("```"):
-            response_text = response_text[3:]
-        if response_text.endswith("```"):
-            response_text = response_text[:-3]
-            
-        test_cases = json.loads(response_text.strip())
-        return json.dumps(test_cases)
-    except Exception as e:
-        print(f"Error generating test cases for {title}: {e}")
-        return json.dumps([])
+        response = requests.post(f"{API_BASE}/api/ingest", json=payload, timeout=15)
+        if response.status_code in (200, 201):
+            print(f"Queued {question.get('title')}: {response.json().get('questionId')}")
+            return True
+        print(f"Failed {question.get('title')}: HTTP {response.status_code} {response.text}")
+    except requests.RequestException as error:
+        print(f"Failed {question.get('title')}: {error}")
+    return False
 
-def main():
-    # Load env variables from backend directory
-    env_path = os.path.join(os.path.dirname(__file__), '..', 'backend', '.env')
-    load_dotenv(env_path)
 
-    db_url = os.getenv('DIRECT_URL') or os.getenv('DATABASE_URL')
-    groq_api_key = os.getenv('GROQ_API_KEY')
-    
-    if not db_url:
-        print("Error: Could not find DIRECT_URL or DATABASE_URL in backend/.env")
-        exit(1)
-    if not groq_api_key:
-        print("Error: Could not find GROQ_API_KEY in backend/.env")
-        exit(1)
+def main() -> None:
+    limit = int(sys.argv[1]) if len(sys.argv) > 1 else 100
+    questions = LeetCodeScraper().fetch_questions(limit=limit)
+    accepted = 0
+    for question in questions:
+        accepted += int(submit_question(question))
+        time.sleep(0.25)
+    print(f"Accepted {accepted}/{len(questions)} questions into the staged AI pipeline.")
 
-    print("Initializing Groq Client...")
-    groq_client = Groq(api_key=groq_api_key)
-
-    print("Connecting to Supabase PostgreSQL...")
-    try:
-        conn = psycopg2.connect(db_url)
-        cursor = conn.cursor()
-    except Exception as e:
-        print("Failed to connect to the database:", e)
-        exit(1)
-
-    scraper = LeetCodeScraper()
-    print("Fetching 100 questions from LeetCode...")
-    questions = scraper.fetch_questions(limit=100)
-    print(f"Successfully fetched {len(questions)} questions from LeetCode.")
-
-    inserted = 0
-    skipped = 0
-
-    for q in questions:
-        title = q['title']
-        
-        cursor.execute('SELECT id, "testCases" FROM "Question" WHERE title = %s', (title,))
-        row = cursor.fetchone()
-        
-        if row:
-            q_id, existing_tc = row
-            # If valid test cases exist, skip
-            if existing_tc and existing_tc != [] and existing_tc != '[]' and len(existing_tc) > 0:
-                skipped += 1
-                print(f"Skipping {title}, already has valid test cases.")
-                continue
-            
-            # If row exists but testcases are empty, update it
-            print(f"Generating test cases for existing question: {title}...")
-            description = q.get('html_content', '')
-            test_cases_json = generate_test_cases(groq_client, title, description)
-            try:
-                cursor.execute('UPDATE "Question" SET "testCases" = %s WHERE id = %s', (test_cases_json, q_id))
-                inserted += 1
-                conn.commit()
-                print(f"Updated test cases for: {title}")
-            except Exception as e:
-                print(f"Error updating {title}: {e}")
-                conn.rollback()
-            time.sleep(2)
-            continue
-            
-        print(f"Generating test cases for new question: {title}...")
-        description = q.get('html_content', '')
-        test_cases_json = generate_test_cases(groq_client, title, description)
-        
-        q_id = str(uuid.uuid4())
-        category = "DSA"
-        subtopic = q['tags'][0] if q.get('tags') else "General"
-        difficulty = q['difficulty']
-        
-        try:
-            cursor.execute('''
-                INSERT INTO "Question" (id, category, subtopic, difficulty, title, description, "testCases")
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
-            ''', (q_id, category, subtopic, difficulty, title, description, test_cases_json))
-            inserted += 1
-            conn.commit() 
-            print(f"Inserted: {title}")
-        except Exception as e:
-            print(f"Error inserting {title}: {e}")
-            conn.rollback()
-            
-        time.sleep(2)
-
-    cursor.close()
-    conn.close()
-
-    print(f"Done! Successfully inserted: {inserted} questions with test cases.")
-    print(f"Skipped {skipped} questions.")
 
 if __name__ == "__main__":
     main()

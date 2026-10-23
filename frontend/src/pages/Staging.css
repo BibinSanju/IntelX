@@ -129,7 +129,12 @@
   border-left: 5px solid var(--color-brand-green);
 }
 
-.staged-card.status-PENDING_AI {
+.staged-card.status-PENDING_AI,
+.staged-card.status-PENDING_SUMMARY,
+.staged-card.status-PENDING_ENRICHMENT,
+.staged-card.status-PENDING_DEDUP,
+.staged-card.status-PENDING_SYNTHESIS,
+.staged-card.status-PENDING_SANDBOX {
   border-left: 5px solid var(--color-brand-gold);
 }
 
@@ -138,6 +143,7 @@
 }
 
 .staged-card.status-FAILED_SANDBOX,
+.staged-card.status-FAILED_PREPROCESSING,
 .staged-card.status-FAILED_AI,
 .staged-card.status-FAILED_SECURITY {
   border-left: 5px solid var(--error);

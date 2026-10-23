@@ -5,6 +5,14 @@ export interface MoodleQuestionData {
     category?: string;
     subtopic?: string;
     difficulty?: string;
+    type?: 'Programming' | 'Theory';
+    metadata?: {
+        detailed_answer?: string;
+        concise_answer?: string;
+        expected_keywords?: string[];
+        expected_concepts?: string[];
+        scoring_rubric?: { max_score?: number; criteria?: string[] };
+    };
     solutionCode?: string;
     testCases?: Array<{
         input: string;
@@ -46,6 +54,36 @@ export function buildMoodleCodeRunnerXml(questions: MoodleQuestionData[]): strin
 `;
 
         for (const q of group) {
+            if (q.type === 'Theory') {
+                const referenceAnswer = q.metadata?.detailed_answer || q.metadata?.concise_answer || '';
+                const rubric = q.metadata?.scoring_rubric?.criteria?.join('\n') || 'Evaluate technical correctness and completeness.';
+                xml += `
+  <question type="essay">
+    <name>
+      <text><![CDATA[${safeCdata(q.title)}]]></text>
+    </name>
+    <questiontext format="html">
+      <text><![CDATA[${safeCdata(q.description)}]]></text>
+    </questiontext>
+    <generalfeedback format="html">
+      <text><![CDATA[${safeCdata(referenceAnswer)}]]></text>
+    </generalfeedback>
+    <defaultgrade>${q.metadata?.scoring_rubric?.max_score || 100}.0000000</defaultgrade>
+    <penalty>0.0000000</penalty>
+    <hidden>0</hidden>
+    <responseformat>editor</responseformat>
+    <responserequired>1</responserequired>
+    <responsefieldlines>15</responsefieldlines>
+    <attachments>0</attachments>
+    <attachmentsrequired>0</attachmentsrequired>
+    <graderinfo format="plain_text">
+      <text><![CDATA[${safeCdata(rubric)}]]></text>
+    </graderinfo>
+  </question>
+`;
+                continue;
+            }
+
             let testcasesXml = '';
             const testCases = q.testCases || [];
 
@@ -98,6 +136,10 @@ ${testcasesXml}
 
     xml += '</quiz>\n';
     return xml;
+}
+
+function safeCdata(value: string): string {
+    return value.replace(/]]>/g, ']]]]><![CDATA[>');
 }
 
 function escapeXml(unsafe: string): string {

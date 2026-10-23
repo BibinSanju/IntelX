@@ -1,11 +1,10 @@
 import os
-import time
 import json
-import uuid
+import time
 import requests
 from bs4 import BeautifulSoup
-import psycopg2
 from dotenv import load_dotenv
+from content_normalizer import html_to_markdown
 
 def get_cses_problems():
     url = "https://cses.fi/problemset/"
@@ -50,6 +49,8 @@ def get_cses_problems():
                 "category": "CSES",
                 "difficulty": "Easy",
                 "tags": ["Introductory"],
+                "source_url": link,
+                "markdown_content": html_to_markdown(html_content),
                 "html_content": html_content
             })
         time.sleep(0.5) 
@@ -64,51 +65,31 @@ def main():
     with open('cses_problems.json', 'w', encoding='utf-8') as f:
         json.dump(problems, f, indent=2, ensure_ascii=False)
         
-    # Inject into database
+    # Submit to the same backend pipeline used by every coding-problem scraper.
     env_path = os.path.join(os.path.dirname(__file__), '..', 'backend', '.env')
     load_dotenv(env_path)
+    api_base = os.getenv('FEEDER_API_URL', 'http://localhost:3000')
+    accepted = 0
 
-    db_url = os.getenv('DIRECT_URL') or os.getenv('DATABASE_URL')
-    if not db_url:
-        print("Warning: No database URL found in backend/.env. Skipping database injection.")
-        return
-
-    try:
-        conn = psycopg2.connect(db_url)
-        cursor = conn.cursor()
-    except Exception as e:
-        print("Failed to connect to the database:", e)
-        return
-        
-    print("Injecting into Database...")
-    inserted = 0
-    skipped = 0
-    
     for q in problems:
-        title = q['title']
-        cursor.execute('SELECT id FROM "Question" WHERE title = %s', (title,))
-        if cursor.fetchone():
-            skipped += 1
-            continue
-            
-        q_id = str(uuid.uuid4())
-        test_cases = json.dumps([]) 
-        
         try:
-            cursor.execute('''
-                INSERT INTO "Question" (id, category, subtopic, difficulty, title, description, "testCases")
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
-            ''', (q_id, "CSES", "Introductory", "Medium", title, q['html_content'], test_cases))
-            inserted += 1
-        except Exception as e:
-            print(f"Error inserting {title}: {e}")
-            conn.rollback()
-            continue
+            response = requests.post(f"{api_base}/api/ingest", json={
+                "raw_text": f"Problem Title: {q['title']}\nDifficulty: {q['difficulty']}\n\n{q['markdown_content']}",
+                "source": "CSES_Scraper",
+                "tags": q['tags'],
+                "hints": [],
+                "source_url": q['source_url'],
+                "source_metadata": {"provider": "cses", "category": q['category']},
+            }, timeout=15)
+            if response.status_code in (200, 201):
+                accepted += 1
+                print(f"Queued {q['title']}: {response.json().get('questionId')}")
+            else:
+                print(f"Failed {q['title']}: HTTP {response.status_code} {response.text}")
+        except requests.RequestException as error:
+            print(f"Failed {q['title']}: {error}")
 
-    conn.commit()
-    cursor.close()
-    conn.close()
-    print(f"Done! Inserted: {inserted}. Skipped: {skipped}.")
+    print(f"Done! Accepted {accepted}/{len(problems)} into the staged AI pipeline.")
 
 if __name__ == "__main__":
     main()
