@@ -4,6 +4,7 @@ import axios from 'axios';
 import { ArrowLeft, AlertCircle, FileCode } from 'lucide-react';
 import './ProblemDetails.css';
 import { API_BASE } from '../config';
+import { safeHtml } from '../api';
 
 interface Question {
   id: string;
@@ -86,7 +87,7 @@ export default function ProblemDetails() {
         <hr className="divider my-6" />
 
         <div className="problem-description">
-          <div dangerouslySetInnerHTML={{ __html: question.description }} />
+          <div dangerouslySetInnerHTML={safeHtml(question.description)} />
         </div>
 
         {question.testCases && Array.isArray(question.testCases) && question.testCases.length > 0 && (

@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { API_BASE } from '../config';
+import { safeHtml } from '../api';
 import { useAudioRecorder } from '../hooks/useAudioRecorder';
 import './SubmitPrompt.css';
 
@@ -550,7 +551,7 @@ export default function SubmitPrompt() {
                 {pipelineData.description && (
                   <div 
                     className="feeder-result-desc" 
-                    dangerouslySetInnerHTML={{ __html: pipelineData.description }}
+                    dangerouslySetInnerHTML={safeHtml(pipelineData.description)}
                   />
                 )}
                 {pipelineData.testCases && Array.isArray(pipelineData.testCases) && (

@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import './Staging.css';
 import { API_BASE } from '../config';
+import { safeHtml } from '../api';
 import { useAudioRecorder } from '../hooks/useAudioRecorder';
 
 interface StagedQuestion {
@@ -596,14 +597,14 @@ export default function Staging() {
                   <div className="inspector-desc-scroll">
                     <div 
                       className="inspector-html-content" 
-                      dangerouslySetInnerHTML={{ __html: inspectingQuestion.description || inspectingQuestion.rawText }}
+                      dangerouslySetInnerHTML={safeHtml(inspectingQuestion.description || inspectingQuestion.rawText)}
                     />
                     {inspectingQuestion.constraints && (
                       <div className="inspector-constraints-box">
                         <h4 className="inspector-constraints-title">Constraints</h4>
                         <div 
                           className="inspector-html-content" 
-                          dangerouslySetInnerHTML={{ __html: inspectingQuestion.constraints }} 
+                          dangerouslySetInnerHTML={safeHtml(inspectingQuestion.constraints)} 
                         />
                       </div>
                     )}

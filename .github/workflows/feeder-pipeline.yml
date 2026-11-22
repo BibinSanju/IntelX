@@ -150,7 +150,7 @@ jobs:
       - name: 📋 Validate Docker Compose Orchestration Config
         run: |
           touch .env
-          docker compose config
+          EXECUTOR_TOKEN=ci-token JWT_SECRET=ci-secret docker compose config
 
       - name: 🔨 Build Executor Sandbox Image
         uses: docker/build-push-action@v5
@@ -271,7 +271,7 @@ jobs:
           (cd executor && PORT=8080 node server.js) > /tmp/executor.log 2>&1 &
           
           echo "Starting Backend on :3000..."
-          (cd backend && PORT=3000 GOOGLE_API_KEYS="$GOOGLE_API_KEYS" GROQ_API_KEYS="$GROQ_API_KEYS" GEMINI_API_KEY="$GEMINI_API_KEY" GROQ_API_KEY="$GROQ_API_KEY" npx tsx src/index.ts) > /tmp/backend.log 2>&1 &
+          (cd backend && PORT=3000 ENABLE_DEMO_ACCOUNTS=true GOOGLE_API_KEYS="$GOOGLE_API_KEYS" GROQ_API_KEYS="$GROQ_API_KEYS" GEMINI_API_KEY="$GEMINI_API_KEY" GROQ_API_KEY="$GROQ_API_KEY" npx tsx src/index.ts) > /tmp/backend.log 2>&1 &
           
           echo "Starting Frontend on :5173..."
           (cd frontend && npx vite --host 0.0.0.0 --port 5173) > /tmp/frontend.log 2>&1 &

@@ -17,6 +17,7 @@ import {
   type LeetCodeDiscussion,
 } from './leetcodeEnrichmentService.js';
 import dotenv from 'dotenv';
+import { EXECUTOR_URL, executorHeaders } from './executorClient.js';
 dotenv.config();
 
 const pool = new Pool({
@@ -25,7 +26,6 @@ const pool = new Pool({
 const adapter = new PrismaPg(pool);
 const prisma = new PrismaClient({ adapter });
 
-const EXECUTOR_URL = process.env.EXECUTOR_URL || 'http://localhost:8080';
 const PRIMARY_MODEL = process.env.GROQ_MODEL || 'openai/gpt-oss-120b';
 
 async function createChatCompletion(options: { messages: any[]; temperature?: number; response_format?: any; max_tokens?: number }) {
@@ -737,7 +737,7 @@ Output ONLY JSON:
       try {
         const valRes = await fetch(`${EXECUTOR_URL}/validate`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: executorHeaders(),
           body: JSON.stringify({
             language: 'python',
             code: solutionCode,

@@ -4,6 +4,8 @@ async function testSandbox() {
     console.log('🧪 Running Executor Sandbox Integration Tests...');
     const PORT = process.env.PORT || 8080;
     const url = `http://localhost:${PORT}/validate`;
+    const headers = { 'Content-Type': 'application/json' };
+    if (process.env.EXECUTOR_TOKEN) headers['X-Executor-Token'] = process.env.EXECUTOR_TOKEN;
 
     // Test 1: Passing Python Solution
     console.log('Test 1: Valid Python Solution with Standard I/O...');
@@ -19,7 +21,7 @@ async function testSandbox() {
 
     const res1 = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify(passPayload)
     });
     const data1 = await res1.json();
@@ -39,7 +41,7 @@ async function testSandbox() {
 
     const res2 = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify(failPayload)
     });
     const data2 = await res2.json();
@@ -60,7 +62,7 @@ async function testSandbox() {
     const start = Date.now();
     const res3 = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify(timeoutPayload)
     });
     const duration = Date.now() - start;

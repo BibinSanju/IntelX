@@ -13,6 +13,7 @@ export default function Signup() {
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [facultyCode, setFacultyCode] = useState('');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   
@@ -35,7 +36,8 @@ export default function Signup() {
         username, 
         email, 
         password,
-        role 
+        role,
+        ...(role === 'FACULTY' && { facultyCode })
       });
       if (response.data.success) {
         const user = response.data.user;
@@ -139,13 +141,32 @@ export default function Signup() {
               <input 
                 type="password" 
                 className="siet-login-input" 
-                placeholder="Create password (min 6 characters)" 
+                placeholder="Create password (min 6 characters)"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
+                minLength={6}
                 required
               />
             </div>
           </div>
+
+          {role === 'FACULTY' && (
+            <div className="siet-form-field">
+              <label className="siet-form-label">FACULTY INVITE CODE</label>
+              <div className="siet-input-container">
+                <ShieldCheck size={18} className="siet-input-icon" />
+                <input
+                  type="password"
+                  className="siet-login-input"
+                  placeholder="Code issued by the placement admin"
+                  value={facultyCode}
+                  onChange={(e) => setFacultyCode(e.target.value)}
+                  autoComplete="off"
+                  required
+                />
+              </div>
+            </div>
+          )}
 
           <button type="submit" className="siet-submit-btn" disabled={isLoading}>
             <ArrowRight size={18} />

@@ -23,10 +23,23 @@ services:
       dockerfile: Dockerfile
     container_name: feeder-executor
     restart: unless-stopped
-    ports:
-      - "8080:8080"
-    volumes:
-      - ./executor/server.js:/app/server.js:ro
+    # No published port and no internet: only the backend can reach the sandbox.
+    networks:
+      - sandbox
+    environment:
+      EXECUTOR_TOKEN: ${EXECUTOR_TOKEN:?Set EXECUTOR_TOKEN in .env}
+    mem_limit: 1g
+    pids_limit: 512
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - SETUID
+      - SETGID
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
     healthcheck:
       test: ["CMD-SHELL", "node -e \"require('http').get('http://localhost:8080/health', (r) => { process.exit(r.statusCode === 200 ? 0 : 1); });\""]
       interval: 5s
@@ -55,6 +68,12 @@ services:
       DATABASE_URL: postgresql://admin:adminpassword@postgres:5432/placement_portal
       DIRECT_URL: postgresql://admin:adminpassword@postgres:5432/placement_portal
       EXECUTOR_URL: http://executor:8080
+      EXECUTOR_TOKEN: ${EXECUTOR_TOKEN:?Set EXECUTOR_TOKEN in .env}
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
+    networks:
+      - default
+      - sandbox
     healthcheck:
       test: ["CMD-SHELL", "node -e \"require('http').get('http://localhost:3000/', (r) => { process.exit(r.statusCode === 200 ? 0 : 1); });\""]
       interval: 5s
@@ -75,3 +94,8 @@ services:
 
 volumes:
   pgdata:
+
+networks:
+  default:
+  sandbox:
+    internal: true

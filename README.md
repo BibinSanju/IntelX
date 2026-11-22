@@ -64,6 +64,17 @@ npm run dev
 ```
 *(Backend runs on `http://localhost:3000`)*
 
+#### Security configuration
+| Variable | Service | Purpose |
+| :--- | :--- | :--- |
+| `JWT_SECRET` | backend | **Required in production.** Signs login tokens. |
+| `CORS_ORIGINS` | backend | Comma-separated frontend origins allowed to call the API (defaults to the two Vercel URLs). |
+| `FACULTY_SIGNUP_CODE` | backend | Invite code needed to register a faculty account. Without it, faculty signup is disabled. |
+| `ENABLE_DEMO_ACCOUNTS` | backend | `true` creates the public demo logins (`faculty@intelx.edu` / `student@intelx.edu`). Never enable with real data. |
+| `EXECUTOR_TOKEN` | backend + executor | Shared secret the backend sends to the code executor. **Required in production.** |
+
+All API routes except `/login`, `/signup` and `/health` require `Authorization: Bearer <token>`; staging, export and question-bank routes require a FACULTY token.
+
 ### 2. Setup the Frontend
 ```bash
 cd frontend

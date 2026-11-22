@@ -6,9 +6,10 @@ import { PrismaClient } from '@prisma/client'
 import { PrismaPg } from '@prisma/adapter-pg'
 import { Pool } from 'pg'
 import bcrypt from 'bcryptjs'
-import jwt from 'jsonwebtoken'
 import { processQuestionInBackground } from './aiProcessor.js'
+import { JWT_SECRET, requireAuth, signToken, safeEqual, resolveCorsOrigin, type AppEnv, type Role } from './auth.js'
 import { buildMoodleCodeRunnerXml } from './moodleXmlBuilder.js'
+import { validateOnExecutor } from './executorClient.js'
 import { transcribeAudio } from './transcribe.js'
 import { normalizeEvidenceList } from './leetcodeEnrichmentService.js'
 import { ProviderPoolExhaustedError, getProviderPoolSnapshots } from './providerKeyPool.js'
@@ -34,28 +35,19 @@ const pool = new Pool({
 const adapter = new PrismaPg(pool)
 const prisma = new PrismaClient({ adapter })
 
-const app = new Hono()
+const app = new Hono<AppEnv>()
 const port = process.env.PORT ? parseInt(process.env.PORT) : 3000
-const JWT_SECRET = process.env.JWT_SECRET || 'hackathon_super_secret'
 console.log(`Server is running on port ${port}`)
 
-// Allow m1's frontend to talk to your backend
+// Only allow known frontends (see CORS_ORIGINS). Auth uses Bearer tokens, not cookies.
 app.use('/*', cors({
-  origin: (origin) => {
-    if (!origin) return 'https://intel-x-sage.vercel.app';
-    if (
-      origin.endsWith('.vercel.app') ||
-      origin.includes('localhost') ||
-      origin.includes('127.0.0.1')
-    ) {
-      return origin;
-    }
-    return origin;
-  },
+  origin: (origin) => resolveCorsOrigin(origin),
   allowHeaders: ['Content-Type', 'Authorization'],
   allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  credentials: true,
 }))
+
+const authenticated = requireAuth()
+const facultyOnly = requireAuth('FACULTY')
 
 app.get('/', (c) => {
   return c.json({ status: 'live', message: 'Backend Engine is running 🚀' })
@@ -304,7 +296,7 @@ app.post('/api/ingest/screenshots', async (c) => {
 })
 
 // Phase 1: Ingestion API (For Scraper & Student Feeder)
-app.post('/api/ingest', async (c) => {
+app.post('/api/ingest', authenticated, async (c) => {
   try {
     const body = await c.req.json()
     const { raw_text, source, source_url, external_id, source_metadata } = body
@@ -371,7 +363,7 @@ app.post('/api/ingest', async (c) => {
 })
 
 // Speech-to-Text (STT) Transcription API using Groq Whisper Large v3 Turbo
-app.post('/api/transcribe', async (c) => {
+app.post('/api/transcribe', authenticated, async (c) => {
   try {
     const body = await c.req.parseBody()
     const audioFile = (body['file'] || body['audio']) as unknown as File
@@ -423,7 +415,7 @@ app.post('/api/transcribe', async (c) => {
 })
 
 // Phase 1: Status Polling API
-app.get('/api/status/:id', async (c) => {
+app.get('/api/status/:id', authenticated, async (c) => {
   try {
     const id = c.req.param('id')
     const stagedQuestion = await prisma.stagedQuestion.findUnique({
@@ -441,7 +433,7 @@ app.get('/api/status/:id', async (c) => {
 })
 
 // Phase 1: Staged Questions API for Faculty UI (Supports status filter)
-app.get('/api/staged', async (c) => {
+app.get('/api/staged', facultyOnly, async (c) => {
   try {
     const status = c.req.query('status')
     const where = status ? { status } : {}
@@ -456,7 +448,7 @@ app.get('/api/staged', async (c) => {
 })
 
 // Phase 1: Export Selected / All Staged Questions as Moodle CodeRunner XML
-app.post('/api/staged/export-xml', async (c) => {
+app.post('/api/staged/export-xml', facultyOnly, async (c) => {
   try {
     const { questionIds } = await c.req.json()
     let questions = []
@@ -500,7 +492,7 @@ app.post('/api/staged/export-xml', async (c) => {
 })
 
 // Phase 1: Update Staged Question (Edit title, taxonomy, testcases)
-app.patch('/api/staged/:id', async (c) => {
+app.patch('/api/staged/:id', facultyOnly, async (c) => {
   try {
     const id = c.req.param('id')
     const body = await c.req.json()
@@ -526,7 +518,7 @@ app.patch('/api/staged/:id', async (c) => {
 })
 
 // Phase 1: Approve Staged Question API
-app.post('/api/staged/:id/approve', async (c) => {
+app.post('/api/staged/:id/approve', facultyOnly, async (c) => {
   try {
     const id = c.req.param('id')
     const stagedQuestion = await prisma.stagedQuestion.findUnique({
@@ -591,7 +583,7 @@ app.post('/api/staged/:id/approve', async (c) => {
 })
 
 // Phase 1: Discard Staged Question API
-app.delete('/api/staged/:id', async (c) => {
+app.delete('/api/staged/:id', facultyOnly, async (c) => {
   try {
     const id = c.req.param('id')
     await prisma.stagedQuestion.delete({
@@ -604,21 +596,61 @@ app.delete('/api/staged/:id', async (c) => {
   }
 })
 
+// Demo accounts are only provisioned when explicitly enabled (ENABLE_DEMO_ACCOUNTS=true).
+// Their passwords are public, so never enable this on a deployment holding real data.
+const DEMO_ACCOUNTS_ENABLED = process.env.ENABLE_DEMO_ACCOUNTS === 'true'
+const DEMO_ACCOUNTS: Array<{ email: string; username: string; password: string; role: Role }> = [
+  { email: 'faculty@intelx.edu', username: 'Faculty Professor', password: 'Faculty@123', role: 'FACULTY' },
+  { email: 'student@intelx.edu', username: 'Student Candidate', password: 'Student@123', role: 'STUDENT' },
+]
+
+async function ensureDemoAccount(identifier: string) {
+  if (!DEMO_ACCOUNTS_ENABLED) return
+  const demo = DEMO_ACCOUNTS.find(d => d.email === identifier.toLowerCase())
+  if (!demo) return
+  const existing = await prisma.user.findUnique({ where: { email: demo.email } })
+  if (existing) return
+  await prisma.user.create({
+    data: {
+      email: demo.email,
+      username: demo.username,
+      password: await bcrypt.hash(demo.password, 10),
+      role: demo.role,
+    },
+  })
+}
+
 // Phase 2: Native Signup API
 app.post('/signup', async (c) => {
   try {
-    const { email, password, username, role } = await c.req.json()
+    const body = await c.req.json()
+    const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : ''
+    const username = typeof body.username === 'string' ? body.username.trim() : ''
+    const password = typeof body.password === 'string' ? body.password : ''
 
-    // Check if user exists
+    if (!email || !username || !password) {
+      return c.json({ success: false, error: 'Username, email and password are required' }, 400)
+    }
+    if (password.length < 6) {
+      return c.json({ success: false, error: 'Password must be at least 6 characters' }, 400)
+    }
+
+    // Faculty accounts require the faculty invite code configured on the server.
+    let userRole: Role = 'STUDENT'
+    if (body.role === 'FACULTY') {
+      const inviteCode = (process.env.FACULTY_SIGNUP_CODE || '').trim()
+      const provided = typeof body.facultyCode === 'string' ? body.facultyCode.trim() : ''
+      if (!inviteCode || !provided || !safeEqual(provided, inviteCode)) {
+        return c.json({ success: false, error: 'A valid faculty invite code is required to register as faculty' }, 403)
+      }
+      userRole = 'FACULTY'
+    }
+
     const existingUser = await prisma.user.findUnique({ where: { email } })
     if (existingUser) {
       return c.json({ success: false, error: 'Email already in use' }, 400)
     }
 
-    // Role validation: either 'STUDENT' or 'FACULTY'
-    const userRole = role === 'FACULTY' ? 'FACULTY' : 'STUDENT'
-
-    // Hash password and create user
     const hashedPassword = await bcrypt.hash(password, 10)
     const newUser = await prisma.user.create({
       data: {
@@ -629,15 +661,15 @@ app.post('/signup', async (c) => {
       }
     })
 
-    const token = jwt.sign({ id: newUser.id, role: newUser.role }, JWT_SECRET, { expiresIn: '24h' })
-    return c.json({ 
-      success: true, 
-      token, 
-      user: { 
-        id: newUser.id, 
+    const token = signToken({ id: newUser.id, role: userRole })
+    return c.json({
+      success: true,
+      token,
+      user: {
+        id: newUser.id,
         username: newUser.username,
-        role: newUser.role
-      } 
+        role: userRole
+      }
     })
   } catch (error) {
     console.error('Signup error:', error)
@@ -649,103 +681,48 @@ app.post('/signup', async (c) => {
 app.post('/login', async (c) => {
   try {
     const { email, password, expectedRole } = await c.req.json()
-    const identifier = (email || '').trim()
-
-    // Auto-seed/ensure Faculty demo user exists
-    if (identifier.toLowerCase() === 'faculty@intelx.edu' || identifier.toLowerCase() === 'faculty') {
-      let facultyUser = await prisma.user.findFirst({
-        where: {
-          OR: [
-            { email: 'faculty@intelx.edu' },
-            { username: 'faculty' }
-          ]
-        }
-      })
-      if (!facultyUser) {
-        const hashedPassword = await bcrypt.hash('Faculty@123', 10)
-        await prisma.user.create({
-          data: {
-            email: 'faculty@intelx.edu',
-            username: 'Faculty Professor',
-            password: hashedPassword,
-            role: 'FACULTY'
-          }
-        })
-      } else if (facultyUser.role !== 'FACULTY') {
-        await prisma.user.update({
-          where: { id: facultyUser.id },
-          data: { role: 'FACULTY' }
-        })
-      }
+    const identifier = (typeof email === 'string' ? email : '').trim()
+    if (!identifier || typeof password !== 'string' || !password) {
+      return c.json({ success: false, error: 'Invalid credentials' }, 401)
     }
 
-    // Auto-seed/ensure Student demo user exists
-    if (identifier.toLowerCase() === 'student@intelx.edu' || identifier.toLowerCase() === 'student') {
-      let studentUser = await prisma.user.findFirst({
-        where: {
-          OR: [
-            { email: 'student@intelx.edu' },
-            { username: 'student' }
-          ]
-        }
-      })
-      if (!studentUser) {
-        const hashedPassword = await bcrypt.hash('Student@123', 10)
-        await prisma.user.create({
-          data: {
-            email: 'student@intelx.edu',
-            username: 'Student Candidate',
-            password: hashedPassword,
-            role: 'STUDENT'
-          }
-        })
-      }
-    }
+    await ensureDemoAccount(identifier)
 
-    let user = await prisma.user.findFirst({
+    const user = await prisma.user.findFirst({
       where: {
         OR: [
+          { email: identifier.toLowerCase() },
           { email: identifier },
           { username: identifier }
         ]
       }
     })
 
-    if (!user) {
-      return c.json({ success: false, error: 'Account not found. Please register first.' }, 401)
-    }
-
-    let isValid = false
-    if (user.password) {
-      isValid = await bcrypt.compare(password, user.password)
-    }
-    if (!isValid && (password === user.password || password === 'Siet@2727' || (user.role === 'FACULTY' && password === 'Faculty@123') || (user.role === 'STUDENT' && password === 'Student@123'))) {
-      isValid = true
-    }
-
-    if (!isValid) {
+    // Only bcrypt verification; no master passwords or plaintext comparisons.
+    const isValid = !!user?.password && await bcrypt.compare(password, user.password)
+    if (!user || !isValid) {
       return c.json({ success: false, error: 'Invalid credentials' }, 401)
     }
 
-    const assignedRole = user.role || 'STUDENT'
+    const assignedRole: Role = user.role === 'FACULTY' ? 'FACULTY' : 'STUDENT'
 
     // If expectedRole is specified, inform the user if their account has a different role
     if (expectedRole && expectedRole !== assignedRole) {
-      return c.json({ 
-        success: false, 
-        error: `This account is registered as ${assignedRole}. Please switch to the ${assignedRole.toLowerCase()} portal.` 
+      return c.json({
+        success: false,
+        error: `This account is registered as ${assignedRole}. Please switch to the ${assignedRole.toLowerCase()} portal.`
       }, 403)
     }
 
-    const token = jwt.sign({ id: user.id, role: assignedRole }, JWT_SECRET, { expiresIn: '24h' })
-    return c.json({ 
-      success: true, 
-      token, 
-      user: { 
-        id: user.id, 
+    const token = signToken({ id: user.id, role: assignedRole })
+    return c.json({
+      success: true,
+      token,
+      user: {
+        id: user.id,
         username: user.username,
         role: assignedRole
-      } 
+      }
     })
   } catch (error) {
     console.error('Login error:', error)
@@ -754,9 +731,13 @@ app.post('/login', async (c) => {
 })
 
 // Phase 2: Advanced User Profile API (LeetCode Style)
-app.get('/users/:id', async (c) => {
+app.get('/users/:id', authenticated, async (c) => {
   try {
     const userId = c.req.param('id')
+    const requester = c.get('user')
+    if (requester.id !== userId && requester.role !== 'FACULTY') {
+      return c.json({ success: false, error: 'Forbidden' }, 403)
+    }
 
     // Fetch user and all their submissions, including the related question data
     const user = await prisma.user.findUnique({
@@ -868,9 +849,32 @@ app.get('/users/:id', async (c) => {
 })
 
 // Phase 3: Record Submission API
-app.post('/submissions', async (c) => {
+app.post('/submissions', authenticated, async (c) => {
   try {
-    const { userId, questionId, status, code, language } = await c.req.json()
+    // The submitter is always the authenticated user, and the verdict is computed server-side.
+    const userId = c.get('user').id
+    const { questionId, code, language } = await c.req.json()
+    if (typeof questionId !== 'string' || typeof code !== 'string' || !code.trim() || typeof language !== 'string') {
+      return c.json({ success: false, error: 'questionId, code and language are required' }, 400)
+    }
+
+    const question = await prisma.question.findUnique({ where: { id: questionId } })
+    if (!question) {
+      return c.json({ success: false, error: 'Question not found' }, 404)
+    }
+    const testCases = Array.isArray(question.testCases) ? question.testCases : []
+    if (testCases.length === 0) {
+      return c.json({ success: false, error: 'This question has no test cases to grade against' }, 400)
+    }
+
+    let status = 'Fail'
+    try {
+      const verdict = await validateOnExecutor(language, code, testCases)
+      status = verdict?.allPassed === true ? 'Pass' : 'Fail'
+    } catch (err) {
+      console.error('Grading error:', err)
+      return c.json({ success: false, error: 'Grading service unavailable' }, 503)
+    }
 
     const submission = await prisma.submission.create({
       data: {
@@ -890,7 +894,7 @@ app.post('/submissions', async (c) => {
 })
 
 // Phase 2: GET Questions API
-app.get('/questions', async (c) => {
+app.get('/questions', facultyOnly, async (c) => {
   try {
     const questions = await prisma.question.findMany()
     return c.json({ success: true, data: questions })
@@ -901,7 +905,7 @@ app.get('/questions', async (c) => {
 })
 
 // GET Single Question API
-app.get('/questions/:id', async (c) => {
+app.get('/questions/:id', facultyOnly, async (c) => {
   try {
     const id = c.req.param('id')
     const question = await prisma.question.findUnique({
