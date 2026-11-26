@@ -24,6 +24,9 @@ test.describe('End-to-End Question Curation, Sandbox & Moodle XML Pipeline', () 
   // Free-tier token pacing can intentionally spread the multi-stage Groq work
   // across several minute windows instead of triggering 429 responses.
   test.setTimeout(600000);
+  // A retry would re-ingest a near-identical question that deduplication correctly
+  // flags as DUPLICATE_FOUND, hiding the first attempt's real failure. Fail once, clearly.
+  test.describe.configure({ retries: 0 });
 
   test('should ingest prompt, verify 10/10 in sandbox, stage in UI, and export Moodle XML', async ({ page, request, baseURL }) => {
     const apiUrl = process.env.VITE_API_BASE || 'http://localhost:3000';
@@ -47,17 +50,25 @@ test.describe('End-to-End Question Curation, Sandbox & Moodle XML Pipeline', () 
     expect(questionId).toBeDefined();
 
     console.log(`--- Step 2: Polling for Curation & Sandbox 10/10 Verification (ID: ${questionId}) ---`);
-    await expect.poll(async () => {
+    // Wait up to 8 minutes for Groq curation, test-case synthesis and sandbox execution.
+    // Terminal failure states never become STAGED, so stop at once and report why.
+    const pollDeadline = Date.now() + 480000;
+    let finalStatus = 'PENDING_AI';
+    while (Date.now() < pollDeadline) {
       const statusRes = await request.get(`${apiUrl}/api/status/${questionId}`, { headers: authHeaders });
-      if (!statusRes.ok()) return 'PENDING_AI';
-      const statusData = await statusRes.json();
-      console.log(`[E2E Poll] Status: ${statusData.status} | Verdict: ${statusData.data?.sandboxVerdict || 'Processing...'}`);
-      return statusData.status;
-    }, {
-      message: 'Waiting for Groq curation, test-case synthesis, and sandbox execution',
-      timeout: 480000,
-      intervals: [2000, 3000, 4000]
-    }).toBe('STAGED');
+      if (statusRes.ok()) {
+        const statusData = await statusRes.json();
+        finalStatus = statusData.status;
+        const verdict = statusData.data?.sandboxVerdict || 'Processing...';
+        console.log(`[E2E Poll] Status: ${finalStatus} | Verdict: ${verdict}`);
+        if (finalStatus === 'STAGED') break;
+        if (finalStatus?.startsWith('FAILED_') || finalStatus === 'DUPLICATE_FOUND') {
+          throw new Error(`Pipeline ended in ${finalStatus}: ${verdict}`);
+        }
+      }
+      await new Promise(resolve => setTimeout(resolve, 4000));
+    }
+    expect(finalStatus, 'Question did not reach STAGED within 8 minutes').toBe('STAGED');
 
     console.log('--- Step 3: Verifying Faculty Staging Dashboard UI ---');
     await useSession(page, frontendUrl, faculty);
@@ -83,11 +94,11 @@ test.describe('End-to-End Question Curation, Sandbox & Moodle XML Pipeline', () 
     await expect(newQuestionCard).toContainText('Playwright_E2E');
 
     console.log('--- Step 4: Testing Side-by-Side Testcase Inspector Modal ---');
-    const inspectBtn = newQuestionCard.locator('text=Inspect Testcases');
+    const inspectBtn = newQuestionCard.getByRole('button', { name: /Inspect/ });
     await expect(inspectBtn).toBeVisible();
     await inspectBtn.click();
 
-    const inspectorModal = page.locator('.inspector-modal');
+    const inspectorModal = page.locator('.inspector-modal-card');
     await expect(inspectorModal).toBeVisible();
     await expect(inspectorModal).toContainText('10 Standard I/O Test Cases');
 
@@ -116,8 +127,8 @@ test.describe('End-to-End Question Curation, Sandbox & Moodle XML Pipeline', () 
     const student = await login(request, apiUrl, STUDENT_LOGIN, STUDENT_PASSWORD);
     await useSession(page, frontendUrl, student);
     await page.goto(`${frontendUrl}/submit-prompt`);
-    await expect(page.locator('h1')).toContainText(/Interview Question Feeder/i);
-    await expect(page.locator('textarea')).toBeVisible();
+    await expect(page.locator('h1')).toContainText(/Submit Placement Question/i);
+    await expect(page.locator('textarea[required]')).toBeVisible();
 
     console.log('🎉 Full End-to-End Pipeline & CI Quality Gate Passed Successfully!');
   });
