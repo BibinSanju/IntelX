@@ -103,24 +103,37 @@ export default function Staging() {
     }
   }, [inspectingQuestion, isIngestModalOpen]);
 
-  const fetchStaged = async () => {
+  // `silent` refreshes (background polling) skip the loading spinner so the list doesn't flicker.
+  const fetchStaged = async ({ silent = false }: { silent?: boolean } = {}) => {
     try {
-      setLoading(true);
+      if (!silent) setLoading(true);
       const url = activeTab === 'ALL' ? `${API_BASE}/api/staged` : `${API_BASE}/api/staged?status=${activeTab}`;
       const res = await axios.get(url);
       if (res.data.success) {
         setQuestions(res.data.data);
+        setError('');
       }
     } catch (err: any) {
-      setError('Failed to fetch staged questions. Ensure backend is running.');
+      if (!silent) setError('Failed to fetch staged questions. Ensure backend is running.');
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
   useEffect(() => {
     fetchStaged();
   }, [activeTab]);
+
+  // While any question is still moving through the AI pipeline, refresh every few
+  // seconds so its status updates without a page reload. Stops once nothing is pending.
+  const hasPendingQuestions = questions.some(q => q.status?.startsWith('PENDING'));
+  useEffect(() => {
+    if (!hasPendingQuestions) return;
+    const timer = window.setInterval(() => {
+      if (!document.hidden) fetchStaged({ silent: true });
+    }, 4000);
+    return () => window.clearInterval(timer);
+  }, [hasPendingQuestions, activeTab]);
 
   const handleApprove = async (id: string) => {
     try {
@@ -255,7 +268,7 @@ export default function Staging() {
         </div>
 
         <div className="header-actions">
-          <button className="staging-action-btn secondary" onClick={fetchStaged}>
+          <button className="staging-action-btn secondary" onClick={() => fetchStaged()}>
             <RefreshCw size={15} />
             <span>Refresh</span>
           </button>
