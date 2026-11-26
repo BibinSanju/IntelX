@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 
-export type ProviderPoolName = 'google' | 'groq' | 'groq-audio';
+export type ProviderPoolName = 'groq' | 'groq-audio';
 
 export interface ProviderPoolLimits {
   quotaScope: 'shared' | 'per-project' | 'per-organization';
@@ -141,9 +141,7 @@ function parseKeyValue(value: string | undefined): string[] {
 }
 
 export function loadProviderKeys(provider: ProviderPoolName, env: NodeJS.ProcessEnv = process.env): string[] {
-  const raw = provider === 'google'
-    ? [env.GOOGLE_API_KEYS, env.GEMINI_API_KEYS, env.GOOGLE_AI_STUDIO_API_KEYS, env.GOOGLE_API_KEY, env.GEMINI_API_KEY, env.GOOGLE_AI_STUDIO_API_KEY]
-    : [env.GROQ_API_KEYS, env.GROQ_API_KEY];
+  const raw = [env.GROQ_API_KEYS, env.GROQ_API_KEY];
   return [...new Set(raw.flatMap(parseKeyValue))];
 }
 
@@ -157,26 +155,6 @@ export function loadProviderLimits(provider: ProviderPoolName, env: NodeJS.Proce
     maxQueueWaitMs: envNumber(env.PROVIDER_MAX_QUEUE_WAIT_MS, 120_000, 1),
     baseCooldownMs: envNumber(env.PROVIDER_BASE_COOLDOWN_MS, 2_000, 1),
   };
-
-  if (provider === 'google') {
-    const configuredScope = env.GOOGLE_QUOTA_SCOPE?.trim().toLowerCase();
-    return {
-      // Conservative shared profile applied independently to each Google
-      // project: 90% headroom below the current 5 RPM / 250K TPM / 20 RPD
-      // Gemini 3.8 Flash free-tier values visible in AI Studio.
-      requestsPerMinute: envNumber(env.GOOGLE_RPM, 4),
-      tokensPerMinute: envNumber(env.GOOGLE_TPM, 225_000),
-      requestsPerDay: envNumber(env.GOOGLE_RPD, 18),
-      tokensPerDay: envNumber(env.GOOGLE_TPD, 0),
-      concurrency: envNumber(env.GOOGLE_CONCURRENCY, 1, 1),
-      // This deployment uses one Google key per independent free-tier project.
-      // Operators can explicitly choose `shared` if they later add multiple
-      // credentials that belong to the same Google project.
-      quotaScope: configuredScope === 'shared' ? 'shared' : 'per-project',
-      maxAttempts: envNumber(env.GOOGLE_MAX_ATTEMPTS ?? env.PROVIDER_MAX_ATTEMPTS, 20, 1),
-      ...shared,
-    };
-  }
 
   if (provider === 'groq-audio') {
     const configuredScope = env.GROQ_QUOTA_SCOPE?.trim().toLowerCase();
@@ -483,7 +461,7 @@ export function getProviderPool(provider: ProviderPoolName): ProviderKeyPool {
 }
 
 export function getProviderPoolSnapshots(): ProviderPoolSnapshot[] {
-  const providers: ProviderPoolName[] = ['google', 'groq', 'groq-audio'];
+  const providers: ProviderPoolName[] = ['groq', 'groq-audio'];
   return providers.map(provider => {
     const cached = cachedPools.get(provider)?.pool;
     if (cached) return cached.snapshot();

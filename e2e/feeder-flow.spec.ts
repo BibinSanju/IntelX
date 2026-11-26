@@ -54,7 +54,7 @@ test.describe('End-to-End Question Curation, Sandbox & Moodle XML Pipeline', () 
       console.log(`[E2E Poll] Status: ${statusData.status} | Verdict: ${statusData.data?.sandboxVerdict || 'Processing...'}`);
       return statusData.status;
     }, {
-      message: 'Waiting for Gemini preparation, Groq synthesis, and sandbox execution',
+      message: 'Waiting for Groq curation, test-case synthesis, and sandbox execution',
       timeout: 480000,
       intervals: [2000, 3000, 4000]
     }).toBe('STAGED');

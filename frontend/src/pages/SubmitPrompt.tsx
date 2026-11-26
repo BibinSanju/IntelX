@@ -457,7 +457,7 @@ export default function SubmitPrompt() {
                 <div className="feeder-step-body">
                   <div className="feeder-step-name">Normalize &amp; Prepare</div>
                   <div className="feeder-step-desc">
-                    BeautifulSoup produces Markdown; Google AI Studio creates the structured evidence brief.
+                    Your notes are cleaned up and sent to Groq, which reconstructs the formal problem statement.
                     {currentStatus === 'FAILED_PREPROCESSING' && pipelineData?.sandboxVerdict && (
                       <div className="feeder-step-alert">{pipelineData.sandboxVerdict}</div>
                     )}

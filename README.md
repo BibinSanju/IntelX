@@ -56,8 +56,8 @@ If you'd like to test the repository on your local machine, the process is seaml
 ```bash
 cd backend
 npm install
-# Create a .env file with DATABASE_URL, DIRECT_URL, GOOGLE_API_KEY (or GEMINI_API_KEY), and GROQ_API_KEY
-# Optional model overrides: GEMINI_MODEL=gemini-3.8-flash and GROQ_MODEL=openai/gpt-oss-120b
+# Create a .env file with DATABASE_URL, DIRECT_URL and GROQ_API_KEY
+# Optional model overrides: GROQ_MODEL=openai/gpt-oss-120b and SCREENSHOT_GROQ_MODEL=qwen/qwen3.8-27b
 npx prisma generate
 npx prisma db push
 npm run dev
@@ -103,36 +103,26 @@ All coding-problem scrapers now use one provider-isolated pipeline:
 Source HTML
   -> BeautifulSoup (scripts/styles removed; headings, lists, code and examples become Markdown)
   -> POST /api/ingest (no provider keys leave the backend)
-  -> Google AI Studio / Gemini (structured summary, requirements, inferred hints, tags, search query)
-  -> Groq (formal problem reconstruction, LeetCode matching, solution/test generation and repair)
+  -> Groq (theory/programming routing for `auto` items, formal problem reconstruction, LeetCode matching, solution/test generation and repair)
   -> sandbox verification
   -> faculty staging queue
 ```
 
-`GOOGLE_API_KEY` takes precedence over `GEMINI_API_KEY`; `GOOGLE_AI_STUDIO_API_KEY` is also accepted as a project-specific alias. The Gemini model defaults to `gemini-3.8-flash` and can be changed with `GEMINI_MODEL`. Groq continues to use only `GROQ_API_KEY`, with `GROQ_MODEL` as its optional model override. Keys are read only by the backend and must not be exposed through Vite variables or scraper payloads.
+Groq is the only AI provider. The backend reads `GROQ_API_KEY` (or the `GROQ_API_KEYS` pool below), with `GROQ_MODEL` as the optional text-model override. Keys are read only by the backend and must not be exposed through Vite variables or scraper payloads.
 
-If Gemini is unavailable, the question stops at `FAILED_PREPROCESSING`; it does not silently skip into Groq with unprepared input. A missing or failed Groq stage uses `FAILED_AI`. The Google brief and provider/model metadata are stored in `StagedQuestion.preprocessing` for auditability.
+A missing or failed Groq stage marks the question `FAILED_AI`. Older questions processed before the Gemini step was removed may still show `PENDING_SUMMARY` or `FAILED_PREPROCESSING`, and their stored brief remains in `StagedQuestion.preprocessing`.
 
 ### Rate-limited API key pools
 
 The backend supports multiple authorized credentials without exposing them to Python scrapers or the browser. Store the pools as deployment secrets or environment variables—not in `keys.json` and never in Git:
 
 ```env
-GOOGLE_API_KEYS=["google-key-01","google-key-02"]
 GROQ_API_KEYS=["groq-key-01","groq-key-02"]
 ```
 
-The existing singular `GOOGLE_API_KEY`, `GEMINI_API_KEY`, and `GROQ_API_KEY` variables remain valid and are automatically merged into their corresponding pool. Duplicate keys are removed. Logs and `/health` expose only key counts and irreversible short hashes, never credential values.
+The singular `GROQ_API_KEY` variable remains valid and is automatically merged into the pool. Duplicate keys are removed. Logs and `/health` expose only key counts and irreversible short hashes, never credential values.
 
-This deployment assumes that every Google key belongs to a genuinely different Google project, so independent project ledgers are enabled by default:
-
-```env
-GOOGLE_QUOTA_SCOPE=per-project
-```
-
-One common Google free-tier limit profile is applied independently to every project key. Each project therefore has its own RPM/TPM/RPD/TPD counters and `429` cooldown, so a throttled project can rotate to another healthy project. Explicitly set `GOOGLE_QUOTA_SCOPE=shared` if keys ever come from the same project.
-
-This deployment also expects one personal Groq key from each of 20 independent personal organizations:
+This deployment expects one personal Groq key from each of 20 independent personal organizations:
 
 ```env
 GROQ_QUOTA_SCOPE=per-organization
@@ -140,19 +130,9 @@ GROQ_QUOTA_SCOPE=per-organization
 
 One common Groq free-tier profile is applied independently to every organization key. A `429` cools only that organization and rotates to the next healthy personal key. Set `GROQ_QUOTA_SCOPE=shared` if any keys belong to the same Groq account or organization, because Groq quotas are organization-level.
 
-As of September 2026, the Gemini API rejects legacy standard keys; use current Google AI Studio authorization keys. See [Google's key migration guidance](https://ai.google.dev/gemini-api/docs/api-key). A complete non-secret template is available in `backend/.env.example`.
+A complete non-secret template is available in `backend/.env.example`.
 
-Keys from one Google project share its limits, and Groq limits apply at organization level. Therefore, adding keys from the same quota scope improves credential failover but does not multiply throughput. In shared mode the pool applies one aggregate safety budget and a `429` pauses the provider before retrying. In Google `per-project` and Groq `per-organization` modes, each independent quota owner has separate usage counters and cooldown. All modes round-robin healthy keys, disable credentials rejected with `401`/`403`, honor `Retry-After`, use exponential backoff with jitter, limit concurrency, and stop after bounded attempts instead of creating a retry storm.
-
-Google's current limits vary by project, model, and tier, so periodically compare the active values from the [AI Studio rate-limit page](https://ai.google.dev/gemini-api/docs/rate-limits) with these settings. This deployment uses one common Gemini 3.8 Flash free-tier profile for all 20 projects, with roughly 10% safety headroom below the currently visible 5 RPM, 250,000 TPM, and 20 RPD values:
-
-```env
-GOOGLE_RPM=4
-GOOGLE_TPM=225000
-GOOGLE_RPD=18
-GOOGLE_TPD=0
-GOOGLE_CONCURRENCY=1
-```
+Groq limits apply at organization level. Therefore, adding keys from the same quota scope improves credential failover but does not multiply throughput. In shared mode the pool applies one aggregate safety budget and a `429` pauses the provider before retrying. In `per-organization` mode, each independent quota owner has separate usage counters and cooldown. All modes round-robin healthy keys, disable credentials rejected with `401`/`403`, honor `Retry-After`, use exponential backoff with jitter, limit concurrency, and stop after bounded attempts instead of creating a retry storm.
 
 For the default Groq `openai/gpt-oss-120b` model, the [published free-plan limits](https://console.groq.com/docs/rate-limits) are currently 30 RPM, 1,000 RPD, 8,000 TPM, and 200,000 TPD. The application defaults to roughly 90% of those ceilings:
 
@@ -168,7 +148,6 @@ GROQ_AUDIO_RPM=18
 GROQ_AUDIO_RPD=1800
 GROQ_AUDIO_CONCURRENCY=1
 
-GOOGLE_MAX_ATTEMPTS=20
 GROQ_MAX_ATTEMPTS=20
 PROVIDER_MAX_QUEUE_WAIT_MS=120000
 PROVIDER_BASE_COOLDOWN_MS=2000
@@ -193,7 +172,7 @@ Content-Type: application/json
 }
 ```
 
-During Groq processing the backend searches LeetCode through `https://leetcode.com/graphql`, preferring the search query prepared by Gemini. A separate model check must identify a candidate with at least 72% confidence before LeetCode evidence is accepted. For an accepted match, the pipeline retrieves official topic tags and hints plus up to three highest-voted per-question solution/discussion posts. Discussion text is truncated, code and links are removed, and the result is treated as untrusted reference material. Failure to reach LeetCode does not block the normal curation pipeline.
+During Groq processing the backend searches LeetCode through `https://leetcode.com/graphql`, using the search query produced during Groq's formal reconstruction. A separate model check must identify a candidate with at least 72% confidence before LeetCode evidence is accepted. For an accepted match, the pipeline retrieves official topic tags and hints plus up to three highest-voted per-question solution/discussion posts. Discussion text is truncated, code and links are removed, and the result is treated as untrusted reference material. Failure to reach LeetCode does not block the normal curation pipeline.
 
 The GraphQL URL and timeout can be overridden with `LEETCODE_GRAPHQL_URL` and `LEETCODE_TIMEOUT_MS`.
 
@@ -201,9 +180,9 @@ The nightly feeder scrapes a rotating, source-balanced theory batch from Intervi
 
 The larger catalog is rotated by day and provider. A normal batch fetches no more than the number of source pages needed for the requested limit (capped at 12 successful pages), rather than crawling every registered page. If a provider host cannot be resolved or connected to, a per-run circuit breaker skips its remaining pages while the other providers continue. Each source failure is isolated, and historical alternative slugs are tried for topics such as networking, React, Angular, web development, mobile development, and QA.
 
-All theory sources use the same BeautifulSoup-to-Markdown and `/api/ingest` path, marked with `source_metadata.content_type=theory`; JavaTPoint interview and quiz records additionally carry `source_metadata.content_kind`. Gemini prepares the evidence brief; Groq produces a reference answer, expected concepts and keywords, and a 100-point rubric. Theory items skip LeetCode matching and Python sandboxing, undergo duplicate detection, enter faculty staging, and export as Moodle essay questions.
+All theory sources use the same BeautifulSoup-to-Markdown and `/api/ingest` path, marked with `source_metadata.content_type=theory`; JavaTPoint interview and quiz records additionally carry `source_metadata.content_kind`. Groq produces a reference answer, expected concepts and keywords, and a 100-point rubric. Theory items skip LeetCode matching and Python sandboxing, undergo duplicate detection, enter faculty staging, and export as Moodle essay questions.
 
-Reddit is supported as an OAuth-only, explicitly approved source for student interview recollections. The default source set is `r/leetcode`, `r/cscareerquestions`, and `r/developersIndia`. The scraper searches the approved API at `https://oauth.reddit.com/r/{subreddit}/search`, retrieves up to three top-level discussion excerpts from `/r/{subreddit}/comments/{postId}`, omits author identity, filters NSFW/stickied/unrelated posts, and records the stable ID as `reddit:{postId}`. Gemini classifies each retained recollection as programming or theory before it enters the corresponding branch.
+Reddit is supported as an OAuth-only, explicitly approved source for student interview recollections. The default source set is `r/leetcode`, `r/cscareerquestions`, and `r/developersIndia`. The scraper searches the approved API at `https://oauth.reddit.com/r/{subreddit}/search`, retrieves up to three top-level discussion excerpts from `/r/{subreddit}/comments/{postId}`, omits author identity, filters NSFW/stickied/unrelated posts, and records the stable ID as `reddit:{postId}`. Groq classifies each retained recollection as programming or theory before it enters the corresponding branch.
 
 Reddit's [Responsible Builder Policy](https://support.reddithelp.com/hc/en-us/articles/42728983564564-Responsible-Builder-Policy) requires explicit approval. Reddit ingestion remains disabled unless `REDDIT_API_APPROVED=true` and approved `REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET`, and `REDDIT_USER_AGENT` values are configured. The system does not fall back to anonymous `.json` scraping.
 
@@ -213,7 +192,7 @@ Reddit content can also be imported without any automated Reddit request. Copy `
 python scraper/manual_reddit_import.py path/to/reddit-post.json --dry-run
 ```
 
-With the backend running, submit the validated record through the normal Gemini/Groq pipeline:
+With the backend running, submit the validated record through the normal Groq pipeline:
 
 ```bash
 python scraper/manual_reddit_import.py path/to/reddit-post.json
@@ -221,7 +200,7 @@ python scraper/manual_reddit_import.py path/to/reddit-post.json
 
 The importer also accepts a locally saved standard Reddit thread JSON payload (`[post_listing, comment_listing]`). It never contacts Reddit, ignores author fields, retains no account identity, rejects deleted/NSFW/stickied/unrelated content, uses `reddit:{postId}` for idempotency, and sends accepted records to `POST /api/ingest`. Set `FEEDER_API_URL` or pass `--api-base` if the backend is not at `http://localhost:3000`.
 
-Faculty screenshot ingestion is available at `POST /api/ingest/screenshots`; no frontend control is connected yet. The endpoint requires a faculty JWT in `Authorization: Bearer <token>` and multipart files under the `screenshots` field. A request may contain 1-6 genuine PNG, JPEG, or WebP images, with a 4 MB per-image and 12 MB combined limit. Optional text fields are `notes`, `tags`, `hints`, and `source_url`.
+Faculty screenshot ingestion is available at `POST /api/ingest/screenshots`; no frontend control is connected yet. The endpoint requires a faculty JWT in `Authorization: Bearer <token>` and multipart files under the `screenshots` field. A request may contain 1-3 genuine PNG, JPEG, or WebP images (Groq's vision model accepts at most three per request), with a 4 MB per-image and 8 MB combined limit. Optional text fields are `notes`, `tags`, `hints`, and `source_url`.
 
 ```bash
 curl -X POST http://localhost:3000/api/ingest/screenshots \
@@ -232,7 +211,7 @@ curl -X POST http://localhost:3000/api/ingest/screenshots \
   -F "tags=graphs, shortest path"
 ```
 
-Gemini Vision reads the screenshots in upload order, removes common account-identity and interface text, combines overlapping fragments, and returns an anonymous technical transcript with visible tags and hints. The server hashes the ordered image bytes for duplicate protection, discards the uploaded image bytes after extraction, stores only the transcript and non-identifying audit metadata, and queues the existing Gemini brief -> Groq curation -> programming/theory branch -> deduplication -> faculty staging process.
+Groq's vision model (`SCREENSHOT_GROQ_MODEL`, default `qwen/qwen3.8-27b`) reads the screenshots in upload order, removes common account-identity and interface text, combines overlapping fragments, and returns an anonymous technical transcript with visible tags and hints. The server hashes the ordered image bytes for duplicate protection, discards the uploaded image bytes after extraction, stores only the transcript and non-identifying audit metadata, and queues the existing Groq curation -> programming/theory branch -> deduplication -> faculty staging process.
 
 Faculty can also submit a free-form text recollection through `POST /api/ingest/text`; the frontend control is intentionally not connected yet. This JSON endpoint requires a faculty JWT and accepts `description` (required), plus optional `title`, `notes`, `tags`, `hints`, `content_type` (`auto`, `programming`, or `theory`), `source_url`, `external_id`, `company`, and `interview_round`.
 
@@ -251,6 +230,6 @@ curl -X POST http://localhost:3000/api/ingest/text \
   }'
 ```
 
-The server normalizes the description, creates a stable `faculty-text:` fingerprint for exact duplicate protection, records the submitting faculty ID and non-sensitive context, and queues the same Gemini brief -> Groq -> programming/theory -> semantic deduplication -> staging pipeline used by every other source.
+The server normalizes the description, creates a stable `faculty-text:` fingerprint for exact duplicate protection, records the submitting faculty ID and non-sensitive context, and queues the same Groq -> programming/theory -> semantic deduplication -> staging pipeline used by every other source.
 
 Run coding, theory, and Reddit ingestion manually with `python scraper/nightly_feeder.py 10 8 4`, where the limits are LeetCode, total theory, and approved Reddit items respectively. Run only theory ingestion with `python scraper/theory_scraper.py 8`.

@@ -4,9 +4,10 @@ import {
   getProviderPool,
 } from './providerKeyPool.js';
 
-export const SCREENSHOT_MAX_FILES = 6;
+// Groq's vision model accepts at most 3 images per request.
+export const SCREENSHOT_MAX_FILES = 3;
 export const SCREENSHOT_MAX_FILE_BYTES = 4 * 1024 * 1024;
-export const SCREENSHOT_MAX_TOTAL_BYTES = 12 * 1024 * 1024;
+export const SCREENSHOT_MAX_TOTAL_BYTES = 8 * 1024 * 1024;
 
 export type SupportedScreenshotMime = 'image/png' | 'image/jpeg' | 'image/webp';
 
@@ -30,7 +31,8 @@ interface ScreenshotServiceOptions {
   fetchImpl?: typeof fetch;
 }
 
-const DEFAULT_MODEL = 'gemini-3.8-flash';
+const DEFAULT_MODEL = 'qwen/qwen3.8-27b';
+const GROQ_CHAT_URL = 'https://api.groq.com/openai/v1/chat/completions';
 const DEFAULT_TIMEOUT_MS = 60_000;
 
 function limitedList(value: unknown, maxItems: number, maxLength: number): string[] {
@@ -58,7 +60,7 @@ export function parseScreenshotExtraction(raw: string): ScreenshotExtraction {
     .trim();
   const start = cleaned.indexOf('{');
   const end = cleaned.lastIndexOf('}');
-  if (start < 0 || end <= start) throw new Error('Google Vision returned no JSON object.');
+  if (start < 0 || end <= start) throw new Error('Screenshot extraction returned no JSON object.');
   const parsed = JSON.parse(cleaned.slice(start, end + 1));
   const transcript = redactScreenshotIdentity(
     typeof parsed.transcript === 'string' ? parsed.transcript : '',
@@ -120,8 +122,8 @@ export async function extractQuestionFromScreenshots(
     throw new Error(`Combined screenshots must be no larger than ${SCREENSHOT_MAX_TOTAL_BYTES / 1024 / 1024} MB.`);
   }
 
-  const model = (options.model || process.env.SCREENSHOT_GEMINI_MODEL || process.env.GEMINI_MODEL || DEFAULT_MODEL).trim();
-  const timeoutMs = options.timeoutMs ?? Number(process.env.SCREENSHOT_GEMINI_TIMEOUT_MS || DEFAULT_TIMEOUT_MS);
+  const model = (options.model || process.env.SCREENSHOT_GROQ_MODEL || DEFAULT_MODEL).trim();
+  const timeoutMs = options.timeoutMs ?? Number(process.env.SCREENSHOT_TIMEOUT_MS || DEFAULT_TIMEOUT_MS);
   const fetchImpl = options.fetchImpl || fetch;
   const prompt = `These images are screenshots supplied by university faculty as evidence of a technical interview question or discussion. Images are ordered from first to last.
 
@@ -131,72 +133,55 @@ Extract only the technical question and useful technical discussion. Preserve vi
 
 Privacy requirements: omit usernames, display names, avatars, profile details, timestamps, vote counts, awards, and other account identifiers. Discard navigation, advertisements, recommendations, and unrelated conversation.
 
-Return only the requested structured JSON.`;
+Return ONLY a JSON object (no markdown, no backticks) with exactly these keys:
+{
+  "transcript": "the extracted question and useful discussion as plain text",
+  "detectedPlatform": "e.g. Reddit, LeetCode, LinkedIn, WhatsApp, or Unknown",
+  "visibleTags": ["topic tags visible in the screenshots"],
+  "visibleHints": ["solution hints visible in the screenshots"],
+  "warnings": ["anything unreadable or ambiguous"]
+}`;
 
   const requestWithKey = async (apiKey: string) => {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
     try {
-      const parts = [
-        { text: prompt },
+      const content = [
+        { type: 'text', text: prompt },
         ...images.map(image => ({
-          inlineData: {
-            mimeType: image.mimeType,
-            data: image.data.toString('base64'),
-          },
+          type: 'image_url',
+          image_url: { url: `data:${image.mimeType};base64,${image.data.toString('base64')}` },
         })),
       ];
-      const response = await fetchImpl(
-        `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-goog-api-key': apiKey,
-          },
-          signal: controller.signal,
-          body: JSON.stringify({
-            contents: [{ role: 'user', parts }],
-            generationConfig: {
-              temperature: 0,
-              maxOutputTokens: 5000,
-              responseFormat: {
-                text: {
-                  mimeType: 'APPLICATION_JSON',
-                  schema: {
-                    type: 'object',
-                    additionalProperties: false,
-                    required: ['transcript', 'detectedPlatform', 'visibleTags', 'visibleHints', 'warnings'],
-                    properties: {
-                      transcript: { type: 'string' },
-                      detectedPlatform: { type: 'string' },
-                      visibleTags: { type: 'array', items: { type: 'string' } },
-                      visibleHints: { type: 'array', items: { type: 'string' } },
-                      warnings: { type: 'array', items: { type: 'string' } },
-                    },
-                  },
-                },
-              },
-            },
-          }),
+      const response = await fetchImpl(GROQ_CHAT_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${apiKey}`,
         },
-      );
+        signal: controller.signal,
+        body: JSON.stringify({
+          model,
+          temperature: 0,
+          max_tokens: 5000,
+          messages: [{ role: 'user', content }],
+        }),
+      });
       if (!response.ok) {
         const detail = (await response.text()).slice(0, 800);
         throw new ProviderHttpError(
-          `Google screenshot extraction failed (${response.status}): ${detail || response.statusText}`,
+          `Screenshot extraction failed (${response.status}): ${detail || response.statusText}`,
           response.status,
           response.headers,
         );
       }
       const payload = await response.json() as any;
-      const responseText = (payload.candidates?.[0]?.content?.parts || [])
-        .map((part: any) => typeof part.text === 'string' ? part.text : '')
-        .join('')
+      const responseText = String(payload.choices?.[0]?.message?.content || '')
+        // Reasoning models may prepend a <think> block before the JSON.
+        .replace(/<think>[\s\S]*?<\/think>/gi, '')
         .trim();
       if (!responseText) {
-        const blockReason = payload.promptFeedback?.blockReason;
-        throw new Error(`Google Vision returned no content${blockReason ? ` (${blockReason})` : ''}.`);
+        throw new Error('Screenshot extraction returned no content.');
       }
       return { extraction: parseScreenshotExtraction(responseText), model };
     } finally {
@@ -206,14 +191,13 @@ Return only the requested structured JSON.`;
 
   if (options.apiKey !== undefined) {
     const explicitKey = options.apiKey.trim().replace(/^["']|["']$/g, '');
-    if (!explicitKey) throw new Error('Explicit Google AI Studio API key is empty.');
+    if (!explicitKey) throw new Error('Explicit Groq API key is empty.');
     return requestWithKey(explicitKey);
   }
 
-  // Vision token usage varies with image resolution. Reserve a conservative
-  // amount in the same per-project ledger used by text preprocessing.
-  return getProviderPool('google').execute(requestWithKey, {
-    estimatedTokens: 17_000,
+  // Vision token usage varies with image resolution (roughly 2k tokens per image).
+  return getProviderPool('groq').execute(requestWithKey, {
+    estimatedTokens: 2_000 * images.length + 1_000,
     operation: 'screenshot-extraction',
   });
 }

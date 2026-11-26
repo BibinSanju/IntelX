@@ -137,9 +137,9 @@ app.post('/api/ingest/text', async (c) => {
   }
 })
 
-// Faculty screenshot ingestion. Images are used transiently for Gemini Vision
+// Faculty screenshot ingestion. Images are used transiently for Groq vision
 // extraction and are never persisted. The extracted transcript enters the same
-// Google brief -> Groq curation -> deduplication -> staging pipeline as text.
+// Groq curation -> deduplication -> staging pipeline as text.
 app.post('/api/ingest/screenshots', async (c) => {
   const authorization = authorizeFaculty(c.req.header('Authorization'), JWT_SECRET)
   if (!authorization.ok) {

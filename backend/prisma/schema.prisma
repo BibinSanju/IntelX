@@ -22,7 +22,7 @@ model StagedQuestion {
   sourceMetadata  Json?
 
   // Auditable AI-provider handoff
-  preprocessing   Json?    // Google AI Studio problem brief and provider metadata
+  preprocessing   Json?    // Legacy: Gemini problem brief from older pipeline runs (no longer written)
 
   // Matched third-party context (for example, LeetCode hints/discussions)
   enrichment      Json?

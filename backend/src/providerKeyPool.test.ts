@@ -7,27 +7,9 @@ import {
   type ProviderPoolLimits,
 } from './providerKeyPool.js';
 
-assert.deepEqual(
-  loadProviderKeys('google', {
-    GOOGLE_API_KEYS: '["google-a", "google-b", "google-a"]',
-    GEMINI_API_KEY: 'google-c',
-  } as NodeJS.ProcessEnv),
-  ['google-a', 'google-b', 'google-c'],
-);
-assert.equal(loadProviderLimits('google', {} as NodeJS.ProcessEnv).quotaScope, 'per-project');
-assert.equal(loadProviderLimits('google', { GOOGLE_QUOTA_SCOPE: 'shared' } as NodeJS.ProcessEnv).quotaScope, 'shared');
 assert.equal(loadProviderLimits('groq', {} as NodeJS.ProcessEnv).quotaScope, 'per-organization');
 assert.equal(loadProviderLimits('groq', { GROQ_QUOTA_SCOPE: 'shared' } as NodeJS.ProcessEnv).quotaScope, 'shared');
-assert.equal(loadProviderLimits('google', {} as NodeJS.ProcessEnv).maxAttempts, 20);
 assert.equal(loadProviderLimits('groq', {} as NodeJS.ProcessEnv).maxAttempts, 20);
-assert.deepEqual(
-  {
-    rpm: loadProviderLimits('google', {} as NodeJS.ProcessEnv).requestsPerMinute,
-    tpm: loadProviderLimits('google', {} as NodeJS.ProcessEnv).tokensPerMinute,
-    rpd: loadProviderLimits('google', {} as NodeJS.ProcessEnv).requestsPerDay,
-  },
-  { rpm: 4, tpm: 225_000, rpd: 18 },
-);
 assert.deepEqual(
   loadProviderKeys('groq', { GROQ_API_KEYS: 'groq-a;groq-b\ngroq-c' } as NodeJS.ProcessEnv),
   ['groq-a', 'groq-b', 'groq-c'],
@@ -47,7 +29,7 @@ const limits: ProviderPoolLimits = {
   dayWindowMs: 100,
 };
 
-const rotatingPool = new ProviderKeyPool('google', ['secret-a', 'secret-b'], limits);
+const rotatingPool = new ProviderKeyPool('groq', ['secret-a', 'secret-b'], limits);
 const attempted: string[] = [];
 const rotationStarted = Date.now();
 const rotatedResult = await rotatingPool.execute(async key => {
@@ -70,7 +52,7 @@ const authResult = await authPool.execute(async key => {
 assert.equal(authResult, 'healthy');
 assert.equal(authPool.snapshot().disabledKeys, 1);
 
-const pacedPool = new ProviderKeyPool('google', ['paced-key-a', 'paced-key-b'], {
+const pacedPool = new ProviderKeyPool('groq', ['paced-key-a', 'paced-key-b'], {
   ...limits,
   requestsPerMinute: 1,
   maxQueueWaitMs: 250,
@@ -82,7 +64,7 @@ await pacedPool.execute(async key => { pacedKeys.push(key); return 'second'; });
 assert.ok(Date.now() - started >= 25, 'second request should wait for the rolling request window');
 assert.deepEqual(pacedKeys, ['paced-key-a', 'paced-key-b'], 'aggregate pacing must apply even while keys rotate');
 
-const separateProjectsPool = new ProviderKeyPool('google', ['project-a-key', 'project-b-key'], {
+const separateProjectsPool = new ProviderKeyPool('groq', ['project-a-key', 'project-b-key'], {
   ...limits,
   quotaScope: 'per-project',
   requestsPerMinute: 1,
@@ -93,7 +75,7 @@ await separateProjectsPool.execute(async key => { separateKeys.push(key); return
 await separateProjectsPool.execute(async key => { separateKeys.push(key); return 'second'; });
 assert.deepEqual(separateKeys, ['project-a-key', 'project-b-key']);
 
-const perProjectRotationPool = new ProviderKeyPool('google', ['limited-project', 'healthy-project'], {
+const perProjectRotationPool = new ProviderKeyPool('groq', ['limited-project', 'healthy-project'], {
   ...limits,
   quotaScope: 'per-project',
 });
@@ -105,10 +87,10 @@ const perProjectResult = await perProjectRotationPool.execute(async key => {
 });
 assert.equal(perProjectResult, 'continued');
 assert.deepEqual(perProjectAttempts, ['limited-project', 'healthy-project']);
-assert.equal(perProjectRotationPool.snapshot().providerCooldownMs, 0, 'one project must not cool the whole Google pool');
+assert.equal(perProjectRotationPool.snapshot().providerCooldownMs, 0, 'one project must not cool the whole pool');
 
 const twentyProjectKeys = Array.from({ length: 20 }, (_, index) => `project-${index + 1}-key`);
-const twentyProjectPool = new ProviderKeyPool('google', twentyProjectKeys, {
+const twentyProjectPool = new ProviderKeyPool('groq', twentyProjectKeys, {
   ...limits,
   quotaScope: 'per-project',
   maxAttempts: 20,

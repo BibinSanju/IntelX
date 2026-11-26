@@ -2,7 +2,7 @@
 
 Historically this script called Groq and wrote directly to PostgreSQL. It now
 submits BeautifulSoup-normalized Markdown to the backend so the required
-Google AI Studio -> Groq provider chain is always used.
+Groq provider chain is always used.
 """
 
 import os

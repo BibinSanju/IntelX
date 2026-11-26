@@ -37,24 +37,24 @@ let requestBody = '';
 const mockFetch: typeof fetch = async (_input, init) => {
   requestBody = String(init?.body || '');
   return new Response(JSON.stringify({
-    candidates: [{ content: { parts: [{ text: JSON.stringify({
+    choices: [{ message: { content: JSON.stringify({
       transcript: 'A student was asked to reverse a linked list and explain the time complexity.',
       detectedPlatform: 'Reddit',
       visibleTags: ['Linked List'],
       visibleHints: ['Use three pointers'],
       warnings: ['One line was unclear'],
-    }) }] } }],
+    }) } }],
   }), { status: 200, headers: { 'Content-Type': 'application/json' } });
 };
 const result = await extractQuestionFromScreenshots(
   [{ data: png, mimeType: 'image/png' }],
-  { apiKey: 'test-key', model: 'gemini-test', fetchImpl: mockFetch },
+  { apiKey: 'test-key', model: 'vision-test', fetchImpl: mockFetch },
 );
 assert.equal(result.extraction.detectedPlatform, 'Reddit');
 const sent = JSON.parse(requestBody);
-assert.equal(sent.contents[0].parts[1].inlineData.mimeType, 'image/png');
-assert.equal(sent.contents[0].parts[1].inlineData.data, png.toString('base64'));
-assert.match(sent.contents[0].parts[0].text, /omit usernames/);
+assert.equal(sent.model, 'vision-test');
+assert.equal(sent.messages[0].content[1].image_url.url, `data:image/png;base64,${png.toString('base64')}`);
+assert.match(sent.messages[0].content[0].text, /omit usernames/);
 
 const secret = 'test-secret';
 const facultyToken = jwt.sign({ id: 'faculty-1', role: 'FACULTY' }, secret);
